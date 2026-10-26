@@ -22,7 +22,8 @@
     players: [], cards: [], mine: [], boosters: [], quizzes: [], questions: [],
     subs: [], drops: [], claims: [], scores: [], daily: [],
     filters: { cls: "all", rar: "all", missing: false },
-    run: null, overlay: false, adminCode: null, adminData: null
+    run: null, overlay: false, adminCode: null, adminData: null,
+    mk: { view: "search", playerId: null, q: "", decks: [], trades: [], perks: [], loaded: false }
   };
 
   // ---------- Utilitaires ----------
@@ -77,7 +78,16 @@
       ]);
       S.mine = mine; S.boosters = boosters; S.subs = subs; S.claims = claims;
       try { S.daily = await rpc("daily_slots", { p_player: me.id }); } catch (e) { S.daily = []; }
+      try { await loadMarket(); } catch (e) { /* marché pas encore installé */ }
     }
+  }
+
+  async function loadMarket() {
+    const [decks, perks, trades] = await Promise.all([
+      rpc("market_decks", {}), rpc("market_perks", {}),
+      q(S.sb.from("trades").select("*").order("id", { ascending: false }).limit(300))
+    ]);
+    S.mk.decks = decks; S.mk.perks = perks; S.mk.trades = trades; S.mk.loaded = true;
   }
 
   // ---------- Dessins ----------
@@ -166,7 +176,8 @@
     const pending = S.boosters.length + availableDrops().length + S.daily.filter((d) => d.state === "ready").length;
     const todo = openQuizzes().length;
     const tabs = [["album", "Album"], ["quiz", "Quiz"], ["boosters", "Boosters"], ["score", "Score"], ["marche", "Marché"]];
-    const badge = { quiz: todo, boosters: pending };
+    const incoming = S.mk.trades.filter((t) => t.to_player === S.me.id && t.status === "pending").length;
+    const badge = { quiz: todo, boosters: pending, marche: incoming };
     app.innerHTML = `<header class="top"><div class="top-row">
         <button class="top-who" data-action="switch" aria-label="Changer de joueur">${window.RhumAvatar.render(S.me.avatar, 44)}
           <span><span class="top-name">${esc(S.me.first_name)}</span><br><span class="top-sub">Changer de joueur</span></span></button>
@@ -310,9 +321,119 @@
       <p style="margin-top:28px"><button class="link" data-action="admin">Espace organisateur</button></p>`;
   }
 
+  // --- Marché ---
+  const STARS = { commun: 1, rare: 2, epique: 3, legendaire: 4 };
+  function cardLabel(id) {
+    const c = cardById(id);
+    if (!c) return "carte retirée";
+    return `<span class="mk-card r-${c.rarity}"><b>${esc(c.name)}</b> <small>${c.kind === "skipper" ? "skipper" : "bateau"} · ${"★".repeat(STARS[c.rarity] || 1)}</small></span>`;
+  }
+  const norm = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  function deckOf(pid) {
+    const m = new Map();
+    S.mk.decks.forEach(([p, c, n]) => { if (p === pid) m.set(c, n); });
+    return m;
+  }
+  function ownersOf(cid) {
+    return S.mk.decks.filter(([p, c]) => c === cid).map(([p, c, n]) => ({ p, n }));
+  }
+  function marketSearchHTML() {
+    const qs = norm(S.mk.q.trim());
+    if (!qs) {
+      const rows = S.players.filter((p) => p.id !== S.me.id).map((p) => {
+        const n = [...deckOf(p.id).values()].reduce((x, y) => x + y, 0);
+        return `<button class="who mk-p" data-action="mk-player" data-id="${p.id}">${window.RhumAvatar.render(p.avatar, 56)}<span>${esc(p.first_name)}</span><small>${n} ${plural(n, "carte", "cartes")}</small></button>`;
+      }).join("");
+      return `<p class="lede" style="margin-top:14px">Touchez un joueur pour voir son deck, ou cherchez une carte ci-dessus.</p><div class="who-grid">${rows}</div>`;
+    }
+    const pl = S.players.filter((p) => p.id !== S.me.id && norm(p.first_name).includes(qs));
+    const cs = S.cards.filter((c) => norm(c.name).includes(qs) || norm(c.partner_name).includes(qs)).slice(0, 30);
+    const plHTML = pl.map((p) => `<button class="mk-row" data-action="mk-player" data-id="${p.id}">${window.RhumAvatar.render(p.avatar, 36)}<span>Voir le deck de <b>${esc(p.first_name)}</b></span></button>`).join("");
+    const csHTML = cs.map((c) => {
+      const owners = ownersOf(c.id).filter((o) => o.p !== S.me.id);
+      const mine = (S.mine.filter((x) => x.card_id === c.id).length);
+      const chips = owners.length ? owners.map((o) => `<button class="chip" data-action="mk-want" data-player="${o.p}" data-card="${c.id}">${esc((playerById(o.p) || {}).first_name)}${o.n > 1 ? " ×" + o.n : ""} · demander</button>`).join("")
+        : '<span class="mk-none">Personne ne l\'a pour l\'instant</span>';
+      return `<div class="mk-res">${cardLabel(c.id)}${mine ? `<small class="mk-mine">Vous l'avez${mine > 1 ? " ×" + mine : ""}</small>` : ""}<div class="chips">${chips}</div></div>`;
+    }).join("");
+    return `<div style="margin-top:12px">${plHTML}${csHTML || (plHTML ? "" : '<p class="empty">Aucun résultat.</p>')}</div>`;
+  }
+  function marketDeckHTML() {
+    const p = playerById(S.mk.playerId);
+    if (!p) return "";
+    const deck = deckOf(p.id);
+    const list = S.cards.filter((c) => deck.has(c.id)).sort((x, y) => RAR.indexOf(x.rarity) - RAR.indexOf(y.rarity) || x.name.localeCompare(y.name));
+    const mine = new Set(S.mine.map((x) => x.card_id));
+    const grid = list.map((c) => `<div class="mk-cell">${cardHTML(c, { action: "mk-want", count: deck.get(c.id) })}<small class="${mine.has(c.id) ? "mk-mine" : "mk-new"}">${mine.has(c.id) ? "Vous l'avez" : "Il vous manque"}</small></div>`).join("");
+    return `<button class="btn ghost" data-action="mk-back">← Retour</button>
+      <div class="mk-head">${window.RhumAvatar.render(p.avatar, 56)}<div><h2 style="margin:0">Deck de ${esc(p.first_name)}</h2><p class="lede" style="margin:2px 0 0">${list.length} ${plural(list.length, "carte", "cartes")} · touchez une carte pour la demander. Vous ne pouvez rien modifier dans son deck.</p></div></div>
+      <div class="mk-grid">${grid || '<p class="empty">Ce deck est encore vide.</p>'}</div>`;
+  }
+  function tradeLine(t, mode) {
+    const from = playerById(t.from_player), to = playerById(t.to_player);
+    const fn = esc((from || {}).first_name), tn = esc((to || {}).first_name);
+    const perk = t.perk ? `<div class="mk-perk">+ ${esc(t.perk)}</div>` : "";
+    let head;
+    if (mode === "in") head = `<b>${fn}</b> vous propose ${cardLabel(t.give_card)} contre votre ${cardLabel(t.want_card)}`;
+    else if (mode === "out") head = `Vous proposez ${cardLabel(t.give_card)} à <b>${tn}</b> contre ${cardLabel(t.want_card)}`;
+    else head = `<b>${fn}</b> ⇄ <b>${tn}</b> : ${cardLabel(t.give_card)} contre ${cardLabel(t.want_card)}`;
+    return head + perk;
+  }
+  const STATUS = { accepted: "Accepté", declined: "Refusé", cancelled: "Annulé" };
+  function marketTradesHTML() {
+    const T = S.mk.trades, me = S.me.id;
+    const inc = T.filter((t) => t.status === "pending" && t.to_player === me);
+    const out = T.filter((t) => t.status === "pending" && t.from_player === me);
+    const hist = T.filter((t) => t.status !== "pending" && (t.from_player === me || t.to_player === me)).slice(0, 12);
+    const feed = T.filter((t) => t.status === "accepted").slice(0, 8);
+    const box = (t, mode, btns) => `<div class="mk-trade">${tradeLine(t, mode)}<div class="mk-btns">${btns}</div></div>`;
+    return `<h2>Demandes reçues</h2>${inc.map((t) => box(t, "in", `<button class="btn" data-action="mk-accept" data-id="${t.id}">Accepter</button><button class="btn ghost" data-action="mk-decline" data-id="${t.id}">Refuser</button>`)).join("") || '<p class="empty">Aucune demande pour le moment.</p>'}
+      <h2>Mes demandes envoyées</h2>${out.map((t) => box(t, "out", `<button class="btn ghost" data-action="mk-cancel" data-id="${t.id}">Annuler</button>`)).join("") || '<p class="empty">Rien en attente.</p>'}
+      ${hist.length ? `<h2>Historique</h2>${hist.map((t) => `<div class="mk-trade dim">${tradeLine(t, t.from_player === me ? "out" : "in")}<div class="mk-status s-${t.status}">${STATUS[t.status]}</div></div>`).join("")}` : ""}
+      <h2>Activité du marché</h2>${feed.map((t) => `<div class="mk-trade dim">${tradeLine(t, "feed")}</div>`).join("") || '<p class="empty">Aucun échange pour le moment.</p>'}`;
+  }
   function marcheHTML() {
-    return `<h1>Marché</h1><p class="lede">Échanger ses doublons contre les cartes qui manquent, avec en bonus un petit extra du week-end (un dessert, une place à l'avant de la voiture, un oreiller).</p>
-      <p class="empty">Le marché ouvre dans quelques jours. D'ici là, gardez vos doublons.</p>`;
+    const incoming = S.mk.trades.filter((t) => t.to_player === S.me.id && t.status === "pending").length;
+    const v = S.mk.view;
+    const nav = `<div class="chips" role="group" aria-label="Marché"><button class="chip" data-action="mk-view" data-view="search" aria-pressed="${v !== "trades"}">Chercher une carte</button>
+      <button class="chip" data-action="mk-view" data-view="trades" aria-pressed="${v === "trades"}">Mes échanges${incoming ? ` (${incoming})` : ""}</button></div>`;
+    if (!S.mk.loaded) return `<h1>Marché</h1><p class="empty">Le marché n'est pas encore installé (relancez 01_schema.sql dans Supabase).</p>`;
+    if (v === "trades") return `<h1>Marché</h1>${nav}${marketTradesHTML()}`;
+    if (S.mk.playerId) return `<h1>Marché</h1>${nav}${marketDeckHTML()}`;
+    return `<h1>Marché</h1><p class="lede">Chacun peut voir le deck des autres. Trouvez la carte qui vous manque, proposez un échange avec une contrepartie si vous voulez.</p>${nav}
+      <div class="field"><label for="mq">Rechercher un joueur ou une carte</label><input id="mq" type="search" autocomplete="off" placeholder="Ex. Le Cam, Maxi Edmond de Rothschild, Marie…" value="${esc(S.mk.q)}"></div>
+      <div id="mres">${marketSearchHTML()}</div>`;
+  }
+  function openCompose(playerId, cardId) {
+    const to = playerById(playerId), want = cardById(cardId);
+    const counts = ownedCounts();
+    const mine = S.cards.filter((c) => counts.has(c.id)).sort((x, y) => (counts.get(y.id) - counts.get(x.id)) || x.name.localeCompare(y.name));
+    if (!mine.length) return toast("Vous n'avez encore aucune carte à proposer.", true);
+    const opts = mine.map((c) => `<option value="${c.id}">${esc(c.name)} (${c.kind === "skipper" ? "skipper" : "bateau"}, ${RAR_LABEL[c.rarity]})${counts.get(c.id) > 1 ? " ×" + counts.get(c.id) : ""}</option>`).join("");
+    const perks = S.mk.perks.map((x) => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
+    const m = document.createElement("div");
+    m.className = "modal"; m.setAttribute("role", "dialog");
+    m.innerHTML = `<div class="modal-in mk-compose"><h2 style="margin-top:0">Demander à ${esc(to.first_name)}</h2>
+      <p>Vous voulez : ${cardLabel(want.id)}</p>
+      <div class="field"><label for="mkgive">Je donne</label><select id="mkgive">${opts}</select></div>
+      <div class="field"><label for="mkperk">Contrepartie du week-end (facultatif)</label><select id="mkperk"><option value="">Aucune</option>${perks}<option value="__other">Autre…</option></select></div>
+      <div class="field" id="mkotherw" hidden><label for="mkother">Autre : écrivez votre proposition</label><input id="mkother" maxlength="80" placeholder="Ex. je te paie un café samedi"></div>
+      <button class="btn" id="mksend">Envoyer la demande</button><button class="btn alt" id="mkno" style="margin-top:8px">Annuler</button></div>`;
+    document.body.appendChild(m);
+    const perkSel = m.querySelector("#mkperk");
+    perkSel.addEventListener("change", () => { m.querySelector("#mkotherw").hidden = perkSel.value !== "__other"; });
+    m.querySelector("#mkno").addEventListener("click", () => m.remove());
+    m.addEventListener("click", (ev) => { if (ev.target === m) m.remove(); });
+    m.querySelector("#mksend").addEventListener("click", async () => {
+      const btn = m.querySelector("#mksend"); btn.disabled = true;
+      let perk = perkSel.value === "__other" ? m.querySelector("#mkother").value.trim() : perkSel.value;
+      if (perkSel.value === "__other" && perk) perk = "Autre : " + perk;
+      try {
+        await rpc("propose_trade", { p_from: S.me.id, p_to: playerId, p_give: Number(m.querySelector("#mkgive").value), p_want: cardId, p_perk: perk || null });
+        m.remove(); S.mk.view = "trades"; S.mk.playerId = null;
+        toast("Demande envoyée à " + to.first_name + " !"); await refresh();
+      } catch (e) { btn.disabled = false; toast(e.message, true); }
+    });
   }
 
   // --- Admin ---
@@ -359,6 +480,8 @@
         <div class="field"><label for="fp">Joueur</label><select id="fp">${players}</select></div><div class="field"><label for="fc">Carte</label><select id="fc">${cardsOpt}</select></div>
         <div class="field"><label for="fx">Chance (%)</label><input id="fx" type="number" value="10" min="0" max="100"></div><button class="btn" data-action="set-fetish">Enregistrer</button>
         ${fet.length ? `<div class="log" style="margin-top:12px">${fet.map((f) => `${esc(f.player)} : ${esc(f.card)} à ${f.chance} %`).join("<br>")}</div>` : ""}</div>
+      <div class="panel"><h3>Contreparties du marché</h3><p class="muted" style="font-size:14px;margin-bottom:10px">Une proposition par ligne. Les joueurs peuvent aussi écrire « Autre ».</p>
+        <div class="field"><label for="pk">Liste</label><textarea id="pk">${esc((S.mk.perks || []).join("\n"))}</textarea></div><button class="btn" data-action="save-perks">Enregistrer</button></div>
       <div class="panel"><h3>Quiz ouverts</h3>${S.quizzes.filter((z) => z.is_open).map((z) => `<div class="q-card"><div class="grow"><h3>${esc(z.title)}</h3></div><button class="btn small alt" data-action="close-quiz" data-id="${z.id}">Fermer</button></div>`).join("") || '<p class="muted">Aucun.</p>'}</div>
       <button class="btn ghost" data-action="tab" data-tab="score">Quitter l'espace organisateur</button>`;
   }
@@ -462,9 +585,20 @@
       S.tab = "album"; await refresh(true);
     },
     switch() { S.me = null; try { localStorage.removeItem("rhum_player"); localStorage.removeItem("rhum_pin"); } catch (e) {} S.run = null; render(); },
-    tab(el) { S.tab = el.dataset.tab; S.run = null; render(); window.scrollTo(0, 0); },
+    async tab(el) { S.tab = el.dataset.tab; S.run = null; render(); window.scrollTo(0, 0); if (S.tab === "marche") { try { await loadMarket(); if (S.tab === "marche") render(); } catch (e) {} } },
     filter(el) { S.filters[el.dataset.key] = el.dataset.val; render(); },
     "toggle-missing"() { S.filters.missing = !S.filters.missing; render(); },
+    "mk-view"(el) { S.mk.view = el.dataset.view; S.mk.playerId = null; render(); },
+    "mk-player"(el) { S.mk.playerId = Number(el.dataset.id); S.mk.view = "search"; render(); window.scrollTo(0, 0); },
+    "mk-back"() { S.mk.playerId = null; render(); },
+    "mk-want"(el) { openCompose(Number(el.dataset.player || S.mk.playerId), Number(el.dataset.card)); },
+    async "mk-accept"(el) {
+      const r = await rpc("respond_trade", { p_player: S.me.id, p_trade: Number(el.dataset.id), p_accept: true });
+      toast(r === "accepted" ? "Échange fait ! Les cartes sont dans vos decks." : "Échange impossible : une des cartes n'est plus disponible.", r !== "accepted");
+      await refresh();
+    },
+    async "mk-decline"(el) { await rpc("respond_trade", { p_player: S.me.id, p_trade: Number(el.dataset.id), p_accept: false }); toast("Demande refusée."); await refresh(); },
+    async "mk-cancel"(el) { await rpc("cancel_trade", { p_player: S.me.id, p_trade: Number(el.dataset.id) }); toast("Demande annulée."); await refresh(); },
     zoom(el) {
       const c = cardById(Number(el.dataset.card));
       const m = document.createElement("div");
@@ -540,6 +674,11 @@
         toast("Carte offerte."); await refresh();
       } catch (e) { toast(e.message, true); }
     },
+    async "save-perks"() {
+      const txt = document.getElementById("pk").value.split("\n").map((x) => x.trim().replace(/\|/g, "/")).filter(Boolean).join("|");
+      await rpc("admin_set_perks", { p_code: S.adminCode, p_text: txt });
+      toast("Contreparties enregistrées."); await refresh();
+    },
     async "set-fetish"() {
       try {
         await rpc("admin_set_fetish", { p_code: S.adminCode, p_player: Number(document.getElementById("fp").value), p_card: Number(document.getElementById("fc").value), p_chance: Number(document.getElementById("fx").value) });
@@ -555,6 +694,13 @@
   async function loadAdmin() {
     try { S.adminData = { fetish: await rpc("admin_fetish_list", { p_code: S.adminCode }) }; } catch (e) { S.adminData = { fetish: [] }; }
   }
+
+  app.addEventListener("input", (ev) => {
+    if (ev.target && ev.target.id === "mq") {
+      S.mk.q = ev.target.value;
+      const r = document.getElementById("mres"); if (r) r.innerHTML = marketSearchHTML();
+    }
+  });
 
   app.addEventListener("click", async (ev) => {
     const el = ev.target.closest("[data-action]");
