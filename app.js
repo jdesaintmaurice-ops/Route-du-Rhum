@@ -1,4 +1,215 @@
 (function () {
+  let n = 0;
+  const HORIZON = 60;
+  const PAL = {
+    "Ultim": { sky: ["#3E6FC8", "#8FB6EE", "#FBD9B0"], sea: ["#1F5AA8", "#0A2A62"], sun: "#FFF0C0" },
+    "Ocean Fifty": { sky: ["#2F7FE0", "#8CC4FF", "#FFE6C0"], sea: ["#1E6FC0", "#0B3A80"], sun: "#FFF4CC" },
+    "IMOCA": { sky: ["#3A5FC8", "#86A8EE", "#FFD9B8"], sea: ["#1D54B0", "#0A2468"], sun: "#FFEFC0" },
+    "Vintage Multi": { sky: ["#2AA7C0", "#8FDCE4", "#FFEBC8"], sea: ["#17899E", "#08485A"], sun: "#FFF4D0" },
+    "Vintage Mono": { sky: ["#6A7FB8", "#E7B98C", "#FFE2B8"], sea: ["#2A5890", "#10305A"], sun: "#FFEBB8" }
+  };
+  function backdrop(id, p) {
+    return `<defs>
+      <linearGradient id="${id}sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${p.sky[0]}"/><stop offset=".6" stop-color="${p.sky[1]}"/><stop offset="1" stop-color="${p.sky[2]}"/></linearGradient>
+      <linearGradient id="${id}sea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${p.sea[0]}"/><stop offset="1" stop-color="${p.sea[1]}"/></linearGradient>
+      <radialGradient id="${id}sun"><stop offset="0" stop-color="${p.sun}" stop-opacity="1"/><stop offset=".25" stop-color="${p.sun}" stop-opacity=".55"/><stop offset="1" stop-color="${p.sun}" stop-opacity="0"/></radialGradient>
+      <linearGradient id="${id}sail" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset=".55" stop-color="#E9EEF8"/><stop offset="1" stop-color="#B9C6E0"/></linearGradient>
+      <linearGradient id="${id}sail2" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset=".6" stop-color="#EEF2FA"/><stop offset="1" stop-color="#C6D2EA"/></linearGradient>
+      <linearGradient id="${id}hull" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2C2A66"/><stop offset=".45" stop-color="#17124A"/><stop offset="1" stop-color="#0B0830"/></linearGradient>
+      <linearGradient id="${id}wood" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#A8683A"/><stop offset="1" stop-color="#5E3517"/></linearGradient>
+      <linearGradient id="${id}cream" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#D8D2C2"/></linearGradient>
+      <filter id="${id}b" x="-20%" y="-50%" width="140%" height="200%"><feGaussianBlur stdDeviation="2.2"/></filter>
+      <filter id="${id}b2"><feGaussianBlur stdDeviation=".7"/></filter>
+      <clipPath id="${id}clip"><rect y="${HORIZON}" width="120" height="${100 - HORIZON}"/></clipPath>
+    </defs>
+    <rect width="120" height="100" fill="url(#${id}sky)"/>
+    <circle cx="92" cy="${HORIZON - 14}" r="30" fill="url(#${id}sun)"/>
+    <g filter="url(#${id}b)" fill="#fff" opacity=".55"><ellipse cx="26" cy="16" rx="20" ry="3.4"/><ellipse cx="40" cy="20" rx="14" ry="2.4"/><ellipse cx="98" cy="10" rx="16" ry="2.8"/></g>
+    <path d="M0 ${HORIZON} H120" stroke="#fff" stroke-opacity=".5" stroke-width=".6"/>
+    <rect y="${HORIZON}" width="120" height="${100 - HORIZON}" fill="url(#${id}sea)"/>
+    <path d="M86 ${HORIZON + 1} L96 ${HORIZON + 1} L104 100 L80 100Z" fill="${p.sun}" opacity=".16"/>
+    ${[0, 1, 2, 3, 4, 5].map((i) => `<path d="M${(i * 23) % 40 - 6} ${HORIZON + 5 + i * 6.5} q5 -2 10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0" stroke="#fff" stroke-opacity="${(.1 + i * .02).toFixed(2)}" stroke-width="${(.5 + i * .12).toFixed(2)}" fill="none"/>`).join("")}`;
+  }
+  const seams = (pts, w) => pts.map((p) => `<path d="${p}" stroke="#7A8CB4" stroke-opacity=".22" stroke-width="${w || .35}" fill="none"/>`).join("");
+  function front(id, y, op) {
+    return `<path d="M0 ${y} q5 -3.2 10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 V100 H0Z" fill="#0A2468" fill-opacity="${op}"/>`;
+  }
+  function foam(x, y, w) {
+    let s = "";
+    for (let i = 0; i < 9; i++) s += `<circle cx="${(x + (i * 7.3) % w).toFixed(1)}" cy="${(y + ((i * 3.7) % 3)).toFixed(1)}" r="${(0.7 + (i % 3) * 0.5).toFixed(1)}" fill="#fff" opacity="${(.5 + (i % 3) * .15).toFixed(2)}"/>`;
+    return `<path d="M${x - 2} ${y + 1} q${w / 4} -3 ${w / 2} 0 t${w / 2} 0" stroke="#fff" stroke-width="1.6" fill="none" opacity=".75" stroke-linecap="round"/>` + s;
+  }
+  function reflect(id, boatId, yWater) {
+    return `<g clip-path="url(#${id}clip)" opacity=".28"><use href="#${boatId}" transform="translate(0 ${2 * yWater}) scale(1 -1)" filter="url(#${id}b2)"/></g>`;
+  }
+
+  // ======== Vue 3/4 avant, silhouettes inspirées de l'infographie des classes ========
+  const f1 = (x) => Math.round(x * 10) / 10;
+  const P = (S, B, t, dx, dy) => [S[0] + (B[0] - S[0]) * t + (dx || 0), S[1] + (B[1] - S[1]) * t + (dy || 0)];
+  const pts = (a) => a.map((p) => f1(p[0]) + " " + f1(p[1])).join(" L");
+  // Coque vue de 3/4 : bord (livet) de la poupe à l'étrave, flanc visible et pont
+  function hull(id, S, B, H, Wd, fill, stripe, opt) {
+    opt = opt || {};
+    const N = 14, top = [], bot = [], deckEdge = [];
+    for (let i = 0; i <= N; i++) {
+      const t = i / N, s = 0.72 + 0.62 * t;
+      const sheer = -Math.sin(Math.PI * t) * (opt.sheer || 0.8);
+      const p = P(S, B, t, 0, sheer);
+      top.push(p);
+      bot.push([p[0] + (opt.drift || 0) * t, p[1] + H * s * (1 - Math.pow(t, 2.6) * 0.96) * (1 + (opt.belly || 0) * Math.sin(Math.PI * t))]);
+      deckEdge.push([p[0] + 3.2 * s * (1 - t), p[1] - Wd * s * (1 - Math.pow(t, 1.8) * 0.97)]);
+    }
+    const side = `M${pts(top)} L${pts(bot.slice().reverse())}Z`;
+    const deck = `M${pts(top)} L${pts(deckEdge.slice().reverse())}Z`;
+    const stripePath = `M${pts(top.map((p, i) => [p[0], p[1] + (bot[i][1] - p[1]) * 0.24]))}`;
+    const hl = `M${pts(top.map((p, i) => [p[0], p[1] + (bot[i][1] - p[1]) * 0.08]).slice(2, N - 1))}`;
+    return `<path d="${side}" fill="${fill}"/>
+      <path d="${side}" fill="url(#${id}shade)"/>
+      <path d="${deck}" fill="${opt.deck || "#8E9AC0"}"/>
+      <path d="M${pts(deckEdge.slice(1, N - 2))}" stroke="#fff" stroke-opacity=".35" stroke-width=".7" fill="none"/>
+      <path d="${stripePath}" stroke="${stripe}" stroke-width="${opt.sw || 1.8}" fill="none" stroke-linecap="round"/>
+      <path d="${hl}" stroke="#fff" stroke-opacity=".3" stroke-width=".6" fill="none"/>`;
+  }
+  const bits = (id) => `<linearGradient id="${id}shade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset=".5" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".35"/></linearGradient>`;
+  function sailBattens(poly, n, c0, c1) {
+    // lignes de lattes entre deux bords du chant (c0 -> c1)
+    let s = "";
+    for (let i = 1; i <= n; i++) {
+      const t = i / (n + 1);
+      s += `<path d="M${f1(c0[0] + (poly.luff[0] - c0[0]) * 0)} 0" stroke="none"/>`;
+    }
+    return s;
+  }
+  function mainsail(id, mast, head, clew, roach, c, battens, band) {
+    // grand-voile : mât -> tête -> point d'écoute (chute arrondie)
+    const tack = [mast[0], mast[1]];
+    const mid = [(head[0] + clew[0]) / 2 - roach, (head[1] + clew[1]) / 2];
+    let d = `M${head[0]} ${head[1]} Q${f1(mid[0])} ${f1(mid[1])} ${clew[0]} ${clew[1]} L${tack[0]} ${tack[1]}Z`;
+    let b = "";
+    for (let i = 1; i <= battens; i++) {
+      const t = i / (battens + 1);
+      const lx = tack[0], ly = head[1] + (tack[1] - head[1]) * t;
+      // point sur la chute à la même hauteur (interpolation sur la courbe quadratique)
+      const u = 1 - Math.sqrt(1 - Math.min(0.999, t)) ;
+      const tt = t; // approx
+      const cx = (1 - tt) * (1 - tt) * head[0] + 2 * (1 - tt) * tt * mid[0] + tt * tt * clew[0];
+      const cy = (1 - tt) * (1 - tt) * head[1] + 2 * (1 - tt) * tt * mid[1] + tt * tt * clew[1];
+      b += `<path d="M${tack[0]} ${f1(head[1] + (clew[1] - head[1]) * tt)} L${f1(cx)} ${f1(cy)}" stroke="#6F83B3" stroke-opacity=".28" stroke-width=".45"/>`;
+    }
+    const bandTop = band ? `<path d="M${head[0]} ${head[1]} Q${f1(mid[0] + (clew[0] - mid[0]) * 0)} ${f1(mid[1])} ${clew[0]} ${clew[1]} L${tack[0]} ${tack[1]}Z" fill="none"/>` : "";
+    return `<path d="${d}" fill="url(#${id}sail2)"/>${b}
+      <path d="M${head[0]} ${head[1]} Q${f1(mid[0])} ${f1(mid[1])} ${clew[0]} ${clew[1]}" stroke="#fff" stroke-width=".7" fill="none"/>
+      <path d="M${head[0]} ${head[1]} Q${f1(mid[0])} ${f1(mid[1])} ${clew[0]} ${clew[1]}" stroke="${c}" stroke-width="1.3" fill="none" stroke-dasharray="6 3" opacity=".9"/>`;
+  }
+  function jib(id, head, tack, clew, belly, c, seams) {
+    const mx = (head[0] + tack[0]) / 2 + belly, my = (head[1] + tack[1]) / 2;
+    const d = `M${head[0]} ${head[1]} Q${f1(mx)} ${f1(my)} ${tack[0]} ${tack[1]} L${clew[0]} ${clew[1]}Z`;
+    let s = "";
+    for (let i = 1; i <= seams; i++) {
+      const t = i / (seams + 1);
+      const lx = (1 - t) * (1 - t) * head[0] + 2 * (1 - t) * t * mx + t * t * tack[0];
+      const ly = (1 - t) * (1 - t) * head[1] + 2 * (1 - t) * t * my + t * t * tack[1];
+      s += `<path d="M${f1(lx)} ${f1(ly)} L${f1(clew[0] + (head[0] - clew[0]) * (1 - t) * .15)} ${f1(clew[1] + (head[1] - clew[1]) * (1 - t) * .8)}" stroke="#6F83B3" stroke-opacity=".25" stroke-width=".45"/>`;
+    }
+    return `<path d="${d}" fill="url(#${id}sail)"/>${s}
+      <path d="M${head[0]} ${head[1]} Q${f1(mx)} ${f1(my)} ${tack[0]} ${tack[1]}" stroke="${c}" stroke-width="1.5" fill="none" opacity=".95"/>
+      <path d="M${head[0]} ${head[1]} L${clew[0]} ${clew[1]} L${tack[0]} ${tack[1]}" stroke="#fff" stroke-opacity=".6" stroke-width=".5" fill="none"/>`;
+  }
+  const mastLine = (a, b) => `<path d="M${a[0]} ${a[1]} L${b[0]} ${b[1]}" stroke="#2A2F55" stroke-width="2.3" stroke-linecap="round"/><path d="M${a[0] - .5} ${a[1]} L${b[0] - .5} ${b[1]}" stroke="#E6ECFB" stroke-width=".8" stroke-linecap="round"/>`;
+  const wire = (a, b, o) => `<path d="M${a[0]} ${a[1]} L${b[0]} ${b[1]}" stroke="#CDD7F0" stroke-width=".45" opacity="${o || .85}"/>`;
+  const spray = (x, y, w) => foam(x, y, w);
+
+  // ---------- ULTIM : maxi-trimaran, immense grand-voile à lattes, volant ----------
+  function ultim(c, id) {
+    const S = [18, 62], B = [100, 76];
+    const mastB = P(S, B, 0.5, 4, -6), head = [mastB[0] - 2, 3];
+    const boat = `
+      ${hull(id, [22, 70], [88, 83], 6, 2.2, "#1C1A58", c, { sw: 1.4 })}
+      ${hull(id, [36, 56], [108, 66], 4.5, 1.8, "#2A2A70", c, { sw: 1.2 })}
+      <path d="M44 66 L56 74 M70 70 L84 80 M34 63 L50 61 M80 62 L96 62" stroke="#0E0A32" stroke-width="1.5" stroke-linecap="round" opacity=".9"/>
+      <path d="M62 80 L60 88 L66 93 L72 90 L67 82Z" fill="#DDE6FA"/>
+      ${hull(id, S, B, 9, 3.2, "url(#" + id + "hull)", c, { sw: 2, sheer: 1.2 })}
+      <path d="M40 60 Q52 54 64 57 L68 61Z" fill="#2B3478"/><path d="M44 59 Q52 56 62 58" stroke="#A9BCF4" stroke-width="1" fill="none"/>
+      ${mastLine(mastB, head)}
+      ${mainsail(id, [mastB[0] - 1, mastB[1] - 1], [head[0] - 1, head[1] + 2], [14, 64], 6, c, 7)}
+      ${jib(id, [head[0] + 1, head[1] + 4], [96, 73], [64, 66], 14, c, 4)}
+      ${wire([head[0], head[1]], B, .7)}${wire([head[0], head[1]], S, .55)}`;
+    return backdrop(id, PAL["Ultim"]).replace("</defs>", bits(id) + "</defs>") +
+      `<g id="${id}boat">${boat}</g>` + reflect(id, id + "boat", 72) + spray(56, 90, 18) + spray(8, 80, 14) + front(id, 92, .45);
+  }
+  // ---------- OCEAN FIFTY : trimaran de 15 m, mât plus court ----------
+  function fifty(c, id) {
+    const S = [24, 66], B = [98, 79];
+    const mastB = P(S, B, 0.5, 3, -5), head = [mastB[0] - 3, 14];
+    const boat = `
+      ${hull(id, [26, 73], [86, 84], 5.5, 2, "#1C1A58", c, { sw: 1.3 })}
+      ${hull(id, [40, 60], [104, 68], 4, 1.6, "#2A2A70", c, { sw: 1.1 })}
+      <path d="M44 68 L54 76 M70 72 L82 81 M40 64 L54 63 M80 64 L94 64" stroke="#0E0A32" stroke-width="1.4" stroke-linecap="round"/>
+      ${hull(id, S, B, 8, 3, "url(#" + id + "hull)", c, { sw: 1.8 })}
+      <path d="M44 63 Q54 58 66 60 L70 64Z" fill="#2B3478"/>
+      ${mastLine(mastB, head)}
+      ${mainsail(id, [mastB[0] - 1, mastB[1] - 1], [head[0] - 1, head[1] + 2], [22, 68], 4, c, 5)}
+      ${jib(id, [head[0] + 1, head[1] + 4], [95, 76], [62, 69], 10, c, 3)}
+      ${wire([head[0], head[1]], B, .7)}${wire([head[0], head[1]], S, .55)}`;
+    return backdrop(id, PAL["Ocean Fifty"]).replace("</defs>", bits(id) + "</defs>") +
+      `<g id="${id}boat">${boat}</g>` + reflect(id, id + "boat", 76) + spray(16, 86, 22) + spray(66, 90, 16) + front(id, 92, .45);
+  }
+  // ---------- IMOCA : monocoque fin, foils en C, mât haubané ----------
+  function imoca(c, id) {
+    const S = [18, 66], B = [102, 80];
+    const mastB = P(S, B, 0.46, 3, -5), head = [mastB[0] - 3, 6];
+    const boat = `
+      <path d="M64 80 Q78 84 86 94 L83 96 Q74 88 60 83Z" fill="#E3ECFC"/>
+      ${hull(id, S, B, 10, 3.6, "url(#" + id + "hull)", c, { sw: 2, belly: 0.1 })}
+      <path d="M34 63 Q42 55 56 56 L62 63Z" fill="#2B3478"/><path d="M38 62 Q44 57 55 58" stroke="#A9BCF4" stroke-width="1" fill="none"/>
+      ${mastLine(mastB, head)}
+      <path d="M${mastB[0] - 3} ${mastB[1] - 18} L${mastB[0] + 3.5} ${mastB[1] - 20} M${mastB[0] - 3} ${mastB[1] - 36} L${mastB[0] + 3} ${mastB[1] - 37}" stroke="#E6ECFB" stroke-width=".8"/>
+      ${mainsail(id, [mastB[0] - 1, mastB[1] - 1], [head[0] - 1, head[1] + 2], [20, 68], 5, c, 6)}
+      ${jib(id, [head[0] + 1, head[1] + 5], [98, 77], [66, 69], 12, c, 4)}
+      ${wire([head[0], head[1]], B, .7)}${wire([head[0], head[1]], S, .55)}`;
+    return backdrop(id, PAL["IMOCA"]).replace("</defs>", bits(id) + "</defs>") +
+      `<g id="${id}boat">${boat}</g>` + reflect(id, id + "boat", 80) + spray(18, 82, 26) + spray(80, 92, 14) + front(id, 92, .45);
+  }
+  // ---------- RHUM MULTI (Vintage Multi) : trimaran 39-60 pieds, grande chute ronde ----------
+  function vmulti(c, id) {
+    const S = [22, 66], B = [96, 79];
+    const mastB = P(S, B, 0.48, 3, -5), head = [mastB[0] - 5, 10];
+    const boat = `
+      ${hull(id, [24, 72], [84, 83], 5, 1.9, "#E8E3D2", c, { sw: 1.3, deck: "#C9BFA6" })}
+      ${hull(id, [40, 60], [102, 67], 3.8, 1.5, "#EFE9D8", c, { sw: 1, deck: "#C9BFA6" })}
+      <path d="M44 66 L52 75 M70 70 L80 80 M42 62 L54 62 M80 63 L92 63" stroke="#8A6A3C" stroke-width="1.4" stroke-linecap="round"/>
+      ${hull(id, S, B, 8, 3, "#F4EEDD", c, { sw: 1.8, deck: "#B9AD8E" })}
+      <path d="M44 63 Q54 58 66 60 L70 64Z" fill="#B58A52"/>
+      ${mastLine(mastB, head)}
+      ${mainsail(id, [mastB[0] - 1, mastB[1] - 1], [head[0] - 1, head[1] + 2], [20, 67], 8, c, 3)}
+      ${jib(id, [head[0] + 1, head[1] + 4], [93, 76], [60, 68], 12, c, 3)}
+      ${wire([head[0], head[1]], B, .7)}${wire([head[0], head[1]], S, .55)}`;
+    return backdrop(id, PAL["Vintage Multi"]).replace("</defs>", bits(id) + "</defs>") +
+      `<g id="${id}boat">${boat}</g>` + reflect(id, id + "boat", 77) + spray(14, 86, 22) + spray(64, 90, 18) + front(id, 92, .45);
+  }
+  // ---------- RHUM MONO (Vintage Mono) : monocoque classique, grand-voile haute ----------
+  function vmono(c, id) {
+    const S = [20, 68], B = [100, 81];
+    const mastB = P(S, B, 0.46, 3, -5), head = [mastB[0] - 4, 8];
+    const boat = `
+      ${hull(id, S, B, 12, 3.6, "url(#" + id + "wood)", c, { sw: 2, belly: 0.12, deck: "#C79A5E" })}
+      <path d="M36 66 Q44 59 58 60 L64 66Z" fill="#B58A52"/><path d="M40 65 Q46 61 57 62" stroke="#6A4A2A" stroke-width=".8" fill="none"/>
+      ${mastLine(mastB, head)}
+      ${mainsail(id, [mastB[0] - 1, mastB[1] - 1], [head[0] - 1, head[1] + 2], [22, 70], 5, c, 4)}
+      ${jib(id, [head[0] + 1, head[1] + 5], [97, 78], [64, 71], 12, c, 3)}
+      ${wire([head[0], head[1]], B, .7)}${wire([head[0], head[1]], S, .55)}`;
+    return backdrop(id, PAL["Vintage Mono"]).replace("</defs>", bits(id) + "</defs>") +
+      `<g id="${id}boat">${boat}</g>` + reflect(id, id + "boat", 82) + spray(16, 84, 24) + spray(78, 92, 16) + front(id, 92, .45);
+  }
+  function render(cls, color) {
+    const id = "b" + (n++);
+    const fn = { "Ultim": ultim, "Ocean Fifty": fifty, "IMOCA": imoca, "Vintage Multi": vmulti, "Vintage Mono": vmono }[cls] || imoca;
+    return `<svg viewBox="0 0 120 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${fn(color, id)}</svg>`;
+  }
+  window.RhumBoat = { render };
+})();
+
+(function () {
   "use strict";
 
   const CFG = window.RHUM_CONFIG || {};
@@ -98,12 +309,7 @@
   }
 
   function boatArt(cls) {
-    const info = clsInfo(cls);
-    const hull = "#1A1349";
-    if (info.multi) {
-      return `<svg viewBox="0 0 120 90" aria-hidden="true"><path d="M64 6 L64 56 L104 56Z" fill="#fff"/><path d="M60 16 L60 56 L34 56Z" fill="rgba(255,255,255,.75)"/><path d="M14 60 H112 Q106 70 94 70 H34 Q22 70 14 60Z" fill="${hull}"/><path d="M8 80 H46 Q42 86 34 86 H14Z" fill="${hull}"/><path d="M78 80 H116 Q112 86 104 86 H84Z" fill="${hull}"/><path d="M30 70 L22 80 M96 70 L98 80" stroke="${hull}" stroke-width="2.5"/></svg>`;
-    }
-    return `<svg viewBox="0 0 120 90" aria-hidden="true"><path d="M62 6 L62 62 L104 62Z" fill="#fff"/><path d="M57 14 L57 62 L26 62Z" fill="rgba(255,255,255,.75)"/><path d="M12 66 H110 Q102 82 80 82 H36 Q20 82 12 66Z" fill="${hull}"/><path d="M12 66 H110" stroke="${info.color}" stroke-width="3"/></svg>`;
+    return window.RhumBoat.render(cls, clsInfo(cls).color);
   }
 
   function skipperArt(cls) {
