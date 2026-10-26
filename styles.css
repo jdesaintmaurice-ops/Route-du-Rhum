@@ -396,3 +396,13 @@ textarea { min-height: 220px; font-family: var(--body); }
 .check { display: flex; align-items: center; gap: 8px; margin: 4px 0 12px; font-size: 14px; color: var(--ink-soft); }
 .invite .modal-in { background: var(--sea-900); border-radius: 16px; padding: 18px; }
 .steps { padding-left: 20px; margin: 10px 0 16px; line-height: 1.5; }
+
+/* ---------- Description sous la carte du booster, règles des points ---------- */
+.ov { overflow-y: auto; }
+.ov-blurb { width: min(86vw, 340px); max-height: 26dvh; overflow-y: auto; background: var(--sea-800); border: 1px solid var(--sea-700); border-radius: 12px; padding: 10px 12px; color: var(--ink-soft); font-size: 14px; line-height: 1.4; text-align: left; }
+.ov-blurb b { display: block; color: var(--ink); font: 700 15px/1.2 var(--body); margin-bottom: 4px; }
+.rules-list { display: grid; gap: 8px; margin: 12px 0; }
+.rules-list > div { display: flex; align-items: center; gap: 12px; background: var(--sea-800); border-radius: 12px; padding: 10px 12px; }
+.rules-list b { font: 800 16px/1 var(--display); min-width: 64px; }
+.rules-list .pq { color: var(--flag-blue, #6FB1FF); } .rules-list .pc { color: var(--flag-yellow); } .rules-list .pp { color: var(--flag-red, #FF6B6B); }
+.rules-list span { font-size: 15px; } .rules-list small { color: var(--ink-soft); }
