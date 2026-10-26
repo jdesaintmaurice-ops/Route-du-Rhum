@@ -234,7 +234,8 @@
     subs: [], drops: [], claims: [], scores: [], daily: [],
     filters: { cls: "all", rar: "all", missing: false },
     run: null, overlay: false, adminCode: null, adminData: null,
-    mk: { view: "search", playerId: null, q: "", decks: [], trades: [], perks: [], loaded: false }
+    flash: [], myLevel: 3, hardSubs: [], streak: null, admin: { levels: [] },
+    mk: { view: "search", playerId: null, q: "", decks: [], trades: [], perks: { leger: [], costaud: [] }, loaded: false }
   };
 
   // ---------- Utilitaires ----------
@@ -290,7 +291,17 @@
       S.mine = mine; S.boosters = boosters; S.subs = subs; S.claims = claims;
       try { S.daily = await rpc("daily_slots", { p_player: me.id }); } catch (e) { S.daily = []; }
       try { await loadMarket(); } catch (e) { /* marché pas encore installé */ }
+      try { S.myLevel = Number(await rpc("my_level", { p_player: me.id })) || 3; } catch (e) { S.myLevel = 3; }
     }
+    try { await loadFlash(); } catch (e) { S.flash = []; }
+    try {
+      const hardIds = quizzes.filter((z) => z.kind === "hard").map((z) => z.id);
+      S.hardSubs = hardIds.length ? await q(sb.from("quiz_submissions").select("quiz_id, player_id, score").in("quiz_id", hardIds)) : [];
+    } catch (e) { S.hardSubs = []; }
+  }
+
+  async function loadFlash() {
+    S.flash = await q(S.sb.from("flash_drops").select("*").order("id", { ascending: false }).limit(6));
   }
 
   async function loadMarket() {
@@ -298,7 +309,7 @@
       rpc("market_decks", {}), rpc("market_perks", {}),
       q(S.sb.from("trades").select("*").order("id", { ascending: false }).limit(300))
     ]);
-    S.mk.decks = decks; S.mk.perks = perks; S.mk.trades = trades; S.mk.loaded = true;
+    S.mk.decks = decks; S.mk.perks = (perks && perks.leger) ? perks : { leger: [], costaud: [] }; S.mk.trades = trades; S.mk.loaded = true;
   }
 
   // ---------- Dessins ----------
@@ -381,15 +392,37 @@
   function shell(inner) {
     const pending = S.boosters.length + availableDrops().length + S.daily.filter((d) => d.state === "ready").length;
     const todo = openQuizzes().length;
-    const tabs = [["album", "Album"], ["quiz", "Quiz"], ["boosters", "Boosters"], ["score", "Score"], ["marche", "Marché"]];
+    const tabs = [["marche", "Marché"], ["album", "Album"], ["quiz", "Quiz"], ["boosters", "Boosters"], ["score", "Score"]];
     const incoming = S.mk.trades.filter((t) => t.to_player === S.me.id && t.status === "pending").length;
     const badge = { quiz: todo, boosters: pending, marche: incoming };
+    try { if (navigator.setAppBadge) navigator.setAppBadge(todo + pending + incoming); } catch (e) {}
     app.innerHTML = `<header class="top"><div class="top-row">
         <button class="top-who" data-action="switch" aria-label="Changer de joueur">${window.RhumAvatar.render(S.me.avatar, 44)}
           <span><span class="top-name">${esc(S.me.first_name)}</span><br><span class="top-sub">Changer de joueur</span></span></button>
         <div class="top-score"><b>${myScore().total}</b><span>points</span></div></div>${pennants()}</header>
-      <main id="view" class="view">${inner}</main>
+      <main id="view" class="view">${flashBanner()}${inner}</main>
       <nav class="tabbar" aria-label="Navigation"><div class="tabbar-in">${tabs.map(([k, l]) => `<button class="tab" data-action="tab" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ""}>${l}${badge[k] ? `<span class="dot" aria-label="${badge[k]} à faire">${badge[k]}</span>` : ""}</button>`).join("")}</div></nav>`;
+  }
+
+  // --- Légendaire éclair ---
+  function flashState() {
+    const now = Date.now();
+    const active = S.flash.find((f) => !f.winner_player && new Date(f.expires_at) > now);
+    const recent = S.flash.find((f) => f.winner_player && f.won_at && now - new Date(f.won_at) < 20 * 60000);
+    const iWon = S.me && S.flash.some((f) => f.winner_player === S.me.id);
+    return { active, recent, iWon };
+  }
+  function flashBanner() {
+    if (!S.me) return "";
+    const { active, recent, iWon } = flashState();
+    if (active && !iWon) return `<div class="flash"><div><b>Légendaire éclair</b><span>${esc(active.label)} : le plus rapide gagne. Une seule victoire par joueur.</span></div><button class="btn" data-action="claim-flash" data-id="${active.id}">Je le prends</button></div>`;
+    if (active && iWon) return `<div class="flash dim"><div><b>Légendaire éclair en cours</b><span>Vous en avez déjà gagné un : laissez la chance aux autres.</span></div></div>`;
+    if (recent) { const w = playerById(recent.winner_player); return `<div class="flash dim"><div><b>Légendaire éclair pris</b><span>${esc(w ? w.first_name : "Quelqu'un")} a été le plus rapide.</span></div></div>`; }
+    return "";
+  }
+  function marketBanner() {
+    const incoming = S.mk.trades.filter((t) => t.to_player === S.me.id && t.status === "pending").length;
+    return `<button class="mk-banner" data-action="tab" data-tab="marche"><b>Marché</b><span>${incoming ? `${incoming} ${plural(incoming, "demande", "demandes")} pour vous` : "Échangez vos cartes, demandez celles qui vous manquent"}</span></button>`;
   }
 
   // --- Album ---
@@ -433,7 +466,7 @@
         </div><div class="pair-badge">${full ? `Paire complète : +${bonus} points` : `Paire : +${bonus} points`}</div></section>`;
     }).join("");
 
-    return `<h1>Mon album</h1>
+    return `${marketBanner()}<h1>Mon album</h1>
       <div class="stats"><div><b>${have}/${totalCards}</b><span>cartes</span></div><div><b>${pairs}</b><span>${plural(pairs, "paire", "paires")}</span></div></div>
       <div class="progress" role="img" aria-label="${pct} % de l'album"><i style="width:${pct}%"></i></div>
       <div class="chips" role="group" aria-label="Filtrer par classe">${chips([["all", "Toutes"]].concat(classes.map((c) => [c, esc(c)])), "cls")}</div>
@@ -443,9 +476,10 @@
   }
 
   // --- Quiz ---
+  const canSee = (z) => z.kind !== "hard" || S.myLevel >= (z.min_level || 1);
   function openQuizzes() {
     const done = new Set(S.subs.map((s) => s.quiz_id));
-    return S.quizzes.filter((z) => z.is_open && !done.has(z.id));
+    return S.quizzes.filter((z) => z.is_open && !done.has(z.id) && canSee(z));
   }
   function quizQuestions(id) { return S.questions.filter((x) => x.quiz_id === id).sort((a, b) => a.position - b.position); }
 
@@ -453,9 +487,11 @@
     if (S.run) return quizRunHTML();
     const todo = openQuizzes();
     const done = S.quizzes.filter((z) => S.subs.some((s) => s.quiz_id === z.id));
-    return `<h1>Quiz du jour</h1><p class="lede">Chaque bonne réponse vous rapporte une carte et 10 points. Un sans-faute ajoute une carte légendaire.</p>
-      ${todo.length ? todo.map((z) => `<div class="q-card"><div class="grow"><h3>${esc(z.title)}</h3><span class="muted">${quizQuestions(z.id).length} questions</span></div><button class="btn small" data-action="start-quiz" data-id="${z.id}">Répondre</button></div>`).join("") :
-        '<p class="empty">Pas de nouveau quiz pour l\'instant. Le prochain arrive demain matin.</p>'}
+    const card = (z) => `<div class="q-card ${z.kind === "hard" ? "hard" : ""}"><div class="grow"><h3>${esc(z.title)}</h3><span class="muted">${quizQuestions(z.id).length} questions${z.kind === "hard" ? " · points et titre, pas de cartes" : ""}</span></div><button class="btn small" data-action="start-quiz" data-id="${z.id}">Répondre</button></div>`;
+    const normal = todo.filter((z) => z.kind !== "hard"), hard = todo.filter((z) => z.kind === "hard");
+    return `<h1>Quiz</h1><p class="lede">Deux quiz par jour. Chaque bonne réponse vous rapporte une carte (5 au maximum) et 10 points. Un sans-faute ajoute une carte légendaire.</p>
+      ${normal.length ? normal.map(card).join("") : '<p class="empty">Pas de nouveau quiz pour l\'instant. Le prochain arrive bientôt.</p>'}
+      ${hard.length ? `<h2>Quiz difficile</h2><p class="muted" style="margin:-4px 0 12px;font-size:14px">20 points par bonne réponse et le titre de Maître du quiz. Pas de cartes.</p>${hard.map(card).join("")}` : ""}
       ${done.length ? `<h2>Déjà fait</h2>${done.map((z) => { const s = S.subs.find((x) => x.quiz_id === z.id); return `<div class="q-card"><div class="grow"><h3>${esc(z.title)}</h3></div><b style="font:800 30px/1 var(--display)">${s.score}/${s.total}</b></div>`; }).join("")}` : ""}`;
   }
 
@@ -465,7 +501,7 @@
       const res = r.result;
       const qs = r.qs;
       return `<p class="q-step">${esc(r.quiz.title)}</p><div class="result-score">${res.score}<small>/${res.total}</small></div>
-        <p class="lede" style="margin-top:8px">${res.score === 0 ? "Aucune carte cette fois. Rendez-vous demain." : res.booster_id ? `Booster gagné : ${Math.min(res.score, 10)} ${plural(res.score, "carte", "cartes")}${res.bonus_legendary ? " et une carte légendaire en bonus" : ""}.` : ""}</p>
+        <p class="lede" style="margin-top:8px">${res.kind === "hard" ? `${res.score * 20} points ajoutés au classement.` : res.score === 0 ? "Aucune carte cette fois. Rendez-vous au prochain quiz." : res.booster_id ? `Booster gagné : ${res.cards || res.score} ${plural(res.cards || res.score, "carte", "cartes")}${res.bonus_legendary ? " et une carte légendaire en bonus" : ""}.` : ""}</p>
         ${res.booster_id ? '<button class="btn" data-action="open-from-quiz" data-id="' + res.booster_id + '" data-bonus="' + (res.bonus_legendary ? 1 : 0) + '">Ouvrir mon booster</button> ' : ""}
         <button class="btn ghost" data-action="quiz-done">Retour</button>
         <div class="review">${qs.map((qq, i) => { const rr = res.results[i]; return `<div><b>${esc(qq.question)}</b>${rr.ok ? "Bonne réponse : " : `Votre réponse : ${rr.given == null ? "aucune" : esc(qq.choices[rr.given])}<br>Bonne réponse : `}${esc(qq.choices[rr.correct_index])}${rr.explanation ? `<div class="why">${esc(rr.explanation)}</div>` : ""}</div>`; }).join("")}</div>`;
@@ -490,37 +526,48 @@
   function fmtMin(m) { return m >= 60 ? Math.floor(m / 60) + " h " + String(m % 60).padStart(2, "0") : m + " min"; }
   function dailyHTML() {
     if (!S.daily.length) return "";
-    return `<h2 style="margin-top:6px">Boosters du jour</h2><p class="muted" style="margin:-4px 0 12px;font-size:14px">À ouvrir avant minuit, sinon ils disparaissent.</p>` +
+    return `<h2 style="margin-top:6px">Booster du jour</h2><p class="muted" style="margin:-4px 0 12px;font-size:14px">À ouvrir avant minuit, sinon il disparaît.</p>` +
       S.daily.map((d) => {
-        const t = "Booster de " + fmtSlot(d.slot);
+        const t = "Booster espresso " + fmtSlot(d.slot);
         if (d.state === "ready") return `<div class="pack-row"><div class="pack-ico"></div><div class="grow"><h3>${t}</h3><p>${d.size} cartes · encore ${fmtMin(d.closes_in_min)} pour l'ouvrir</p></div><button class="btn small" data-action="open-daily" data-slot="${esc(d.slot)}">Ouvrir</button></div>`;
         if (d.state === "locked") return `<div class="pack-row dim"><div class="pack-ico"></div><div class="grow"><h3>${t}</h3><p>Arrive à ${fmtSlot(d.slot)}, dans ${fmtMin(d.opens_in_min)}</p></div></div>`;
         return `<div class="pack-row dim"><div class="pack-ico"></div><div class="grow"><h3>${t}</h3><p>Ouvert aujourd'hui</p></div></div>`;
       }).join("");
   }
+  function streakHTML() {
+    const s = S.streak && S.streak.streak;
+    if (!s) return "";
+    const left = 3 - (s % 3);
+    return `<div class="streak"><b>Série : ${s} ${plural(s, "jour", "jours")}</b><span>${left === 3 ? "Bonus reçu aujourd'hui, la suite dans 3 jours." : `Encore ${left} ${plural(left, "jour", "jours")} d'affilée pour une carte bonus.`}</span></div>`;
+  }
   function minutesLeft(d) { return Math.max(1, Math.round((new Date(d.expires_at) - new Date()) / 60000)); }
 
   function boostersHTML() {
     const drops = availableDrops();
-    return `<h1>Boosters</h1><p class="lede">Deux boosters par jour, plus ceux des quiz, des drops surprise et des cadeaux.</p>
+    return `<h1>Boosters</h1><p class="lede">Un booster espresso chaque jour, plus ceux des quiz, des drops surprise et de la série de connexions.</p>
+      ${streakHTML()}
       ${dailyHTML()}
       ${drops.length ? `<h2 style="margin-top:${S.daily.length ? 26 : 6}px">Drop en cours</h2>${drops.map((d) => `<div class="pack-row"><div class="pack-ico"></div><div class="grow"><h3>${esc(d.label)}</h3><p>${d.size} cartes · encore ${minutesLeft(d)} min</p></div><button class="btn small" data-action="claim" data-id="${d.id}">Récupérer</button></div>`).join("")}` : ""}
       <h2 style="margin-top:${drops.length || S.daily.length ? 26 : 6}px">À ouvrir</h2>
       ${S.boosters.length ? S.boosters.map((b) => `<div class="pack-row"><div class="pack-ico"></div><div class="grow"><h3>${esc(b.label)}</h3><p>${b.size} ${plural(b.size, "carte", "cartes")}${b.luck ? " · chance bonus" : ""}</p></div><button class="btn small" data-action="open" data-id="${b.id}">Ouvrir</button></div>`).join("") :
-        '<p class="empty">Aucun booster en attente. Répondez au quiz du jour ou guettez le prochain drop.</p>'}`;
+        '<p class="empty">Aucun booster en attente. Répondez au quiz ou guettez le prochain drop.</p>'}`;
   }
 
   // --- Score ---
   function scoreHTML() {
     const rows = S.scores.slice().sort((a, b) => b.total - a.total || a.first_name.localeCompare(b.first_name));
     const max = Math.max(1, ...rows.map((r) => r.total));
-    return `<h1>Classement</h1><p class="lede">Les points viennent du quiz, des cartes que vous possédez et des paires skipper + bateau.</p>
+    const hardPts = new Map();
+    S.hardSubs.forEach((h) => hardPts.set(h.player_id, (hardPts.get(h.player_id) || 0) + h.score));
+    const best = Math.max(0, ...hardPts.values());
+    const masters = new Set([...hardPts].filter(([, v]) => v === best && best > 0).map(([k]) => k));
+    return `<h1>Classement</h1><p class="lede">Les points viennent des quiz, des cartes que vous possédez et des paires skipper + bateau.</p>
       <div class="legend"><span><i style="background:var(--flag-blue)"></i>Quiz</span><span><i style="background:var(--flag-yellow)"></i>Cartes</span><span><i style="background:var(--flag-red)"></i>Paires</span></div>
       <ol class="board">${rows.map((r, i) => {
         const p = playerById(r.player_id) || { avatar: {} };
         const w = (v) => (v / max) * 100;
         return `<li class="row ${S.me && r.player_id === S.me.id ? "me" : ""}"><span class="rank">${i + 1}</span>${window.RhumAvatar.render(p.avatar, 48)}
-          <div><div class="row-name">${esc(r.first_name)}</div><div class="bar"><i style="width:${w(r.quiz_points)}%"></i><i style="width:${w(r.card_points)}%"></i><i style="width:${w(r.pair_points)}%"></i></div>
+          <div><div class="row-name">${esc(r.first_name)}${masters.has(r.player_id) ? ' <span class="title-tag">Maître du quiz</span>' : ""}</div><div class="bar"><i style="width:${w(r.quiz_points)}%"></i><i style="width:${w(r.card_points)}%"></i><i style="width:${w(r.pair_points)}%"></i></div>
           <div class="row-det">${r.n_cards} ${plural(r.n_cards, "carte", "cartes")} · ${r.n_pairs} ${plural(r.n_pairs, "paire", "paires")}</div></div>
           <span class="row-total">${r.total}</span></li>`;
       }).join("")}</ol>
@@ -534,6 +581,8 @@
     if (!c) return "carte retirée";
     return `<span class="mk-card r-${c.rarity}"><b>${esc(c.name)}</b> <small>${c.kind === "skipper" ? "skipper" : "bateau"} · ${"★".repeat(STARS[c.rarity] || 1)}</small></span>`;
   }
+  const tierOf = (c) => (c && c.rarity === "legendaire" ? "costaud" : c && c.rarity === "epique" ? "leger" : null);
+  const TIER_LABEL = { leger: "Léger", costaud: "Costaud" };
   const norm = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   function deckOf(pid) {
     const m = new Map();
@@ -570,7 +619,7 @@
     const deck = deckOf(p.id);
     const list = S.cards.filter((c) => deck.has(c.id)).sort((x, y) => RAR.indexOf(x.rarity) - RAR.indexOf(y.rarity) || x.name.localeCompare(y.name));
     const mine = new Set(S.mine.map((x) => x.card_id));
-    const grid = list.map((c) => `<div class="mk-cell">${cardHTML(c, { action: "mk-want", count: deck.get(c.id) })}<small class="${mine.has(c.id) ? "mk-mine" : "mk-new"}">${mine.has(c.id) ? "Vous l'avez" : "Il vous manque"}</small></div>`).join("");
+    const grid = list.map((c) => `<div class="mk-cell">${cardHTML(c, { action: "mk-want", count: deck.get(c.id) })}<small class="${mine.has(c.id) ? "mk-mine" : "mk-new"}">${mine.has(c.id) ? "Vous l'avez" : "Il vous manque"}${tierOf(c) ? " · contrepartie " + TIER_LABEL[tierOf(c)] : ""}</small></div>`).join("");
     return `<button class="btn ghost" data-action="mk-back">← Retour</button>
       <div class="mk-head">${window.RhumAvatar.render(p.avatar, 56)}<div><h2 style="margin:0">Deck de ${esc(p.first_name)}</h2><p class="lede" style="margin:2px 0 0">${list.length} ${plural(list.length, "carte", "cartes")} · touchez une carte pour la demander. Vous ne pouvez rien modifier dans son deck.</p></div></div>
       <div class="mk-grid">${grid || '<p class="empty">Ce deck est encore vide.</p>'}</div>`;
@@ -578,11 +627,12 @@
   function tradeLine(t, mode) {
     const from = playerById(t.from_player), to = playerById(t.to_player);
     const fn = esc((from || {}).first_name), tn = esc((to || {}).first_name);
-    const perk = t.perk ? `<div class="mk-perk">+ ${esc(t.perk)}</div>` : "";
+    const heavy = !t.give_card;
+    const perk = t.perk ? `<div class="mk-perk">${heavy ? "Contrepartie" : "En plus"} : ${esc(t.perk)}</div>` : "";
     let head;
-    if (mode === "in") head = `<b>${fn}</b> vous propose ${cardLabel(t.give_card)} contre votre ${cardLabel(t.want_card)}`;
-    else if (mode === "out") head = `Vous proposez ${cardLabel(t.give_card)} à <b>${tn}</b> contre ${cardLabel(t.want_card)}`;
-    else head = `<b>${fn}</b> ⇄ <b>${tn}</b> : ${cardLabel(t.give_card)} contre ${cardLabel(t.want_card)}`;
+    if (mode === "in") head = heavy ? `<b>${fn}</b> veut votre ${cardLabel(t.want_card)}` : `<b>${fn}</b> vous propose ${cardLabel(t.give_card)} contre votre ${cardLabel(t.want_card)}`;
+    else if (mode === "out") head = heavy ? `Vous demandez ${cardLabel(t.want_card)} à <b>${tn}</b>` : `Vous proposez ${cardLabel(t.give_card)} à <b>${tn}</b> contre ${cardLabel(t.want_card)}`;
+    else head = heavy ? `<b>${tn}</b> donne ${cardLabel(t.want_card)} à <b>${fn}</b>` : `<b>${fn}</b> ⇄ <b>${tn}</b> : ${cardLabel(t.give_card)} contre ${cardLabel(t.want_card)}`;
     return head + perk;
   }
   const STATUS = { accepted: "Accepté", declined: "Refusé", cancelled: "Annulé" };
@@ -606,36 +656,54 @@
     if (!S.mk.loaded) return `<h1>Marché</h1><p class="empty">Le marché n'est pas encore installé (relancez 01_schema.sql dans Supabase).</p>`;
     if (v === "trades") return `<h1>Marché</h1>${nav}${marketTradesHTML()}`;
     if (S.mk.playerId) return `<h1>Marché</h1>${nav}${marketDeckHTML()}`;
-    return `<h1>Marché</h1><p class="lede">Chacun peut voir le deck des autres. Trouvez la carte qui vous manque, proposez un échange avec une contrepartie si vous voulez.</p>${nav}
+    return `<h1>Marché</h1><div class="mk-rules"><div><b>Commun, rare</b><span>Une carte contre une carte, avec un petit extra si vous voulez.</span></div><div class="t-leger"><b>Épique</b><span>Pas d'échange : une contrepartie Léger.</span></div><div class="t-costaud"><b>Légendaire</b><span>Pas d'échange : une contrepartie Costaud.</span></div></div>${nav}
       <div class="field"><label for="mq">Rechercher un joueur ou une carte</label><input id="mq" type="search" autocomplete="off" placeholder="Ex. Le Cam, Maxi Edmond de Rothschild, Marie…" value="${esc(S.mk.q)}"></div>
       <div id="mres">${marketSearchHTML()}</div>`;
   }
+  function perkCards(list, name) {
+    const groups = [["Week-end", []], ["Semaine", []], ["Autres", []]];
+    list.forEach((p) => {
+      const m = /^(Week-end|Semaine) · (.*)$/.exec(p);
+      const g = m ? groups.find((x) => x[0] === m[1]) : groups[2];
+      g[1].push([p, m ? m[2] : p]);
+    });
+    return groups.filter((g) => g[1].length).map((g) => `<div class="perk-group"><h4>${g[0]}</h4><div class="perk-grid">${g[1].map(([full, label]) => `<button type="button" class="perk" data-perk="${esc(full)}" aria-pressed="false">${esc(label)}</button>`).join("")}</div></div>`).join("");
+  }
   function openCompose(playerId, cardId) {
     const to = playerById(playerId), want = cardById(cardId);
+    const tier = tierOf(want);
     const counts = ownedCounts();
     const mine = S.cards.filter((c) => counts.has(c.id)).sort((x, y) => (counts.get(y.id) - counts.get(x.id)) || x.name.localeCompare(y.name));
-    if (!mine.length) return toast("Vous n'avez encore aucune carte à proposer.", true);
+    if (!tier && !mine.length) return toast("Vous n'avez encore aucune carte à proposer.", true);
     const opts = mine.map((c) => `<option value="${c.id}">${esc(c.name)} (${c.kind === "skipper" ? "skipper" : "bateau"}, ${RAR_LABEL[c.rarity]})${counts.get(c.id) > 1 ? " ×" + counts.get(c.id) : ""}</option>`).join("");
-    const perks = S.mk.perks.map((x) => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
+    const list = (S.mk.perks && S.mk.perks[tier || "leger"]) || [];
     const m = document.createElement("div");
     m.className = "modal"; m.setAttribute("role", "dialog");
     m.innerHTML = `<div class="modal-in mk-compose"><h2 style="margin-top:0">Demander à ${esc(to.first_name)}</h2>
       <p>Vous voulez : ${cardLabel(want.id)}</p>
-      <div class="field"><label for="mkgive">Je donne</label><select id="mkgive">${opts}</select></div>
-      <div class="field"><label for="mkperk">Contrepartie du week-end (facultatif)</label><select id="mkperk"><option value="">Aucune</option>${perks}<option value="__other">Autre…</option></select></div>
-      <div class="field" id="mkotherw" hidden><label for="mkother">Autre : écrivez votre proposition</label><input id="mkother" maxlength="80" placeholder="Ex. je te paie un café samedi"></div>
+      ${tier ? `<p class="tier-note t-${tier}">Carte ${RAR_LABEL[want.rarity].toLowerCase()} : pas d'échange de carte. Choisissez une contrepartie <b>${TIER_LABEL[tier]}</b>.</p>`
+        : `<div class="field"><label for="mkgive">Je donne</label><select id="mkgive">${opts}</select></div><p class="muted" style="font-size:14px">Un petit extra du week-end est facultatif.</p>`}
+      <div class="perks">${perkCards(list)}</div>
+      <div class="field"><label for="mkother">Autre : écrivez votre proposition</label><input id="mkother" maxlength="120" placeholder="Ex. je te paie un café samedi"></div>
       <button class="btn" id="mksend">Envoyer la demande</button><button class="btn alt" id="mkno" style="margin-top:8px">Annuler</button></div>`;
     document.body.appendChild(m);
-    const perkSel = m.querySelector("#mkperk");
-    perkSel.addEventListener("change", () => { m.querySelector("#mkotherw").hidden = perkSel.value !== "__other"; });
+    let chosen = "";
+    const other = m.querySelector("#mkother");
+    m.querySelectorAll(".perk").forEach((b) => b.addEventListener("click", () => {
+      const on = b.getAttribute("aria-pressed") !== "true";
+      m.querySelectorAll(".perk").forEach((x) => x.setAttribute("aria-pressed", "false"));
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+      chosen = on ? b.dataset.perk : ""; if (on) other.value = "";
+    }));
+    other.addEventListener("input", () => { if (other.value) { chosen = ""; m.querySelectorAll(".perk").forEach((x) => x.setAttribute("aria-pressed", "false")); } });
     m.querySelector("#mkno").addEventListener("click", () => m.remove());
     m.addEventListener("click", (ev) => { if (ev.target === m) m.remove(); });
     m.querySelector("#mksend").addEventListener("click", async () => {
       const btn = m.querySelector("#mksend"); btn.disabled = true;
-      let perk = perkSel.value === "__other" ? m.querySelector("#mkother").value.trim() : perkSel.value;
-      if (perkSel.value === "__other" && perk) perk = "Autre : " + perk;
+      let perk = chosen || (other.value.trim() ? "Autre : " + other.value.trim() : "");
+      if (tier && !perk) { btn.disabled = false; return toast("Choisissez une contrepartie.", true); }
       try {
-        await rpc("propose_trade", { p_from: S.me.id, p_to: playerId, p_give: Number(m.querySelector("#mkgive").value), p_want: cardId, p_perk: perk || null });
+        await rpc("propose_trade", { p_from: S.me.id, p_to: playerId, p_give: tier ? null : Number(m.querySelector("#mkgive").value), p_want: cardId, p_perk: perk || null });
         m.remove(); S.mk.view = "trades"; S.mk.playerId = null;
         toast("Demande envoyée à " + to.first_name + " !"); await refresh();
       } catch (e) { btn.disabled = false; toast(e.message, true); }
@@ -674,6 +742,9 @@
         <div class="field"><label for="qt">Titre</label><input id="qt" placeholder="Mardi : les bateaux"></div>
         <div class="field"><label for="qb">Questions</label><textarea id="qb" placeholder="Quelle classe compte le plus de skippers ?&#10;- Ultim&#10;* Class40&#10;- IMOCA&#10;&#10;[perso] Qui ronfle le plus ?&#10;* Paul&#10;- Manu&#10;> Explication facultative"></textarea></div>
         <p class="muted" style="font-size:14px;margin-bottom:10px">Une question par bloc, séparée par une ligne vide. * = bonne réponse, - = autre réponse, > = explication.</p>
+        <div class="inline"><div class="field"><label for="qk">Type</label><select id="qk"><option value="normal">Normal (cartes et points)</option><option value="hard">Difficile (points et titre)</option></select></div>
+          <div class="field"><label for="ql">Niveau minimum</label><select id="ql">${[1, 2, 3, 4, 5].map((n) => `<option value="${n}">${n}${n === 1 ? " (tout le monde)" : ""}</option>`).join("")}</select></div></div>
+        <label class="check"><input type="checkbox" id="qn" checked> Prévenir les joueurs par notification</label>
         <button class="btn" data-action="publish-quiz">Publier</button></div>
       <div class="panel"><h3>Lâcher un drop</h3><div class="inline"><div class="field"><label for="dl">Nom</label><input id="dl" value="Drop de midi"></div><div class="field"><label for="dm">Minutes</label><input id="dm" type="number" value="60" min="5"></div></div>
         <div class="inline"><div class="field"><label for="ds">Cartes</label><input id="ds" type="number" value="5" min="1" max="10"></div><div class="field"><label for="dluck">Chance bonus</label><select id="dluck"><option value="0">Non</option><option value="1">Oui</option></select></div></div>
@@ -686,8 +757,19 @@
         <div class="field"><label for="fp">Joueur</label><select id="fp">${players}</select></div><div class="field"><label for="fc">Carte</label><select id="fc">${cardsOpt}</select></div>
         <div class="field"><label for="fx">Chance (%)</label><input id="fx" type="number" value="10" min="0" max="100"></div><button class="btn" data-action="set-fetish">Enregistrer</button>
         ${fet.length ? `<div class="log" style="margin-top:12px">${fet.map((f) => `${esc(f.player)} : ${esc(f.card)} à ${f.chance} %`).join("<br>")}</div>` : ""}</div>
-      <div class="panel"><h3>Contreparties du marché</h3><p class="muted" style="font-size:14px;margin-bottom:10px">Une proposition par ligne. Les joueurs peuvent aussi écrire « Autre ».</p>
-        <div class="field"><label for="pk">Liste</label><textarea id="pk">${esc((S.mk.perks || []).join("\n"))}</textarea></div><button class="btn" data-action="save-perks">Enregistrer</button></div>
+      <div class="panel"><h3>Légendaire éclair</h3><p class="muted" style="font-size:14px;margin-bottom:10px">Une carte légendaire pour le plus rapide. Une seule victoire par joueur.</p>
+        <div class="inline"><div class="field"><label for="fl">Nom</label><input id="fl" value="Légendaire éclair"></div><div class="field"><label for="fm">Minutes</label><input id="fm" type="number" value="30" min="1"></div></div>
+        <label class="check"><input type="checkbox" id="fn" checked> Prévenir les joueurs par notification</label>
+        <button class="btn" data-action="make-flash">Lancer l'éclair</button></div>
+      <div class="panel"><h3>Niveaux des joueurs</h3><p class="muted" style="font-size:14px;margin-bottom:10px">De 1 (débutant) à 5 (expert). Invisible pour les autres joueurs. Sert à choisir qui voit un quiz difficile.</p>
+        ${((S.admin && S.admin.levels) || []).map((p) => `<div class="lvl"><span>${esc(p.name)}</span><select data-level="${p.id}">${[1, 2, 3, 4, 5].map((n) => `<option value="${n}" ${n === p.level ? "selected" : ""}>${n}</option>`).join("")}</select></div>`).join("") || '<p class="muted">Installez la dernière version de 01_schema.sql.</p>'}</div>
+      <div class="panel"><h3>Envoyer une notification</h3>
+        <div class="field"><label for="nt">Titre</label><input id="nt" value="Album du Rhum"></div>
+        <div class="field"><label for="nb">Message</label><input id="nb" placeholder="Un nouveau quiz vient d'arriver"></div>
+        <button class="btn" data-action="send-notif">Envoyer à tous</button></div>
+      <div class="panel"><h3>Contreparties du marché</h3><p class="muted" style="font-size:14px;margin-bottom:10px">Une proposition par ligne, commençant par « Week-end · » ou « Semaine · ». Léger pour les cartes épiques, Costaud pour les légendaires. Les joueurs peuvent aussi écrire « Autre ».</p>
+        <div class="field"><label for="pkl">Léger</label><textarea id="pkl">${esc(((S.mk.perks || {}).leger || []).join("\n"))}</textarea></div>
+        <div class="field"><label for="pkc">Costaud</label><textarea id="pkc">${esc(((S.mk.perks || {}).costaud || []).join("\n"))}</textarea></div><button class="btn" data-action="save-perks">Enregistrer</button></div>
       <div class="panel"><h3>Quiz ouverts</h3>${S.quizzes.filter((z) => z.is_open).map((z) => `<div class="q-card"><div class="grow"><h3>${esc(z.title)}</h3></div><button class="btn small alt" data-action="close-quiz" data-id="${z.id}">Fermer</button></div>`).join("") || '<p class="muted">Aucun.</p>'}</div>
       <button class="btn ghost" data-action="tab" data-tab="score">Quitter l'espace organisateur</button>`;
   }
@@ -788,7 +870,7 @@
       try { await rpc("player_login", { p_player: p.id, p_pin: pin }); } catch (e) { return toast(e.message, true); }
       S.me = p; S.pinFor = null;
       try { localStorage.setItem("rhum_player", String(p.id)); localStorage.setItem("rhum_pin", pin); } catch (e) {}
-      S.tab = "album"; await refresh(true);
+      S.tab = "album"; await doStreak(); await refresh(true); maybeInvite();
     },
     switch() { S.me = null; try { localStorage.removeItem("rhum_player"); localStorage.removeItem("rhum_pin"); } catch (e) {} S.run = null; render(); },
     async tab(el) { S.tab = el.dataset.tab; S.run = null; render(); window.scrollTo(0, 0); if (S.tab === "marche") { try { await loadMarket(); if (S.tab === "marche") render(); } catch (e) {} } },
@@ -800,7 +882,7 @@
     "mk-want"(el) { openCompose(Number(el.dataset.player || S.mk.playerId), Number(el.dataset.card)); },
     async "mk-accept"(el) {
       const r = await rpc("respond_trade", { p_player: S.me.id, p_trade: Number(el.dataset.id), p_accept: true });
-      toast(r === "accepted" ? "Échange fait ! Les cartes sont dans vos decks." : "Échange impossible : une des cartes n'est plus disponible.", r !== "accepted");
+      toast(r === "accepted" ? "C'est fait ! N'oubliez pas la contrepartie s'il y en a une." : "Échange impossible : une des cartes n'est plus disponible.", r !== "accepted");
       await refresh();
     },
     async "mk-decline"(el) { await rpc("respond_trade", { p_player: S.me.id, p_trade: Number(el.dataset.id), p_accept: false }); toast("Demande refusée."); await refresh(); },
@@ -836,7 +918,14 @@
     async "open-daily"(el) {
       try {
         const ids = await rpc("open_daily", { p_player: S.me.id, p_slot: el.dataset.slot });
-        await showDrawn(ids, "Booster de " + fmtSlot(el.dataset.slot), 0);
+        await showDrawn(ids, "Booster espresso " + fmtSlot(el.dataset.slot), 0);
+      } catch (e) { toast(e.message, true); await refresh(); }
+    },
+    async "claim-flash"(el) {
+      try {
+        const cid = await rpc("claim_flash", { p_player: S.me.id, p_flash: Number(el.dataset.id) });
+        await load();
+        await showDrawn([cid], "Légendaire éclair", 0);
       } catch (e) { toast(e.message, true); await refresh(); }
     },
     async claim(el) {
@@ -857,8 +946,11 @@
         const title = document.getElementById("qt").value.trim();
         if (!title) throw new Error("Donnez un titre au quiz.");
         const parsed = parseQuiz(document.getElementById("qb").value);
-        await rpc("admin_publish_quiz", { p_code: S.adminCode, p_title: title, p_questions: parsed });
-        toast(`Quiz publié (${parsed.length} questions).`); await refresh();
+        const kind = document.getElementById("qk").value, lvl = Number(document.getElementById("ql").value);
+        await rpc("admin_publish_quiz", { p_code: S.adminCode, p_title: title, p_questions: parsed, p_kind: kind, p_min_level: kind === "hard" ? lvl : 1 });
+        toast(`Quiz publié (${parsed.length} questions).`);
+        if (document.getElementById("qn") && document.getElementById("qn").checked) notify("Nouveau quiz", kind === "hard" ? "Un quiz difficile vient d'arriver : " + title : title);
+        await refresh();
       } catch (e) { toast(e.message, true); }
     },
     async "make-drop"() {
@@ -881,9 +973,22 @@
       } catch (e) { toast(e.message, true); }
     },
     async "save-perks"() {
-      const txt = document.getElementById("pk").value.split("\n").map((x) => x.trim().replace(/\|/g, "/")).filter(Boolean).join("|");
-      await rpc("admin_set_perks", { p_code: S.adminCode, p_text: txt });
+      const f = (id) => document.getElementById(id).value.split("\n").map((x) => x.trim().replace(/\|/g, "/")).filter(Boolean).join("|");
+      await rpc("admin_set_perks", { p_code: S.adminCode, p_leger: f("pkl"), p_costaud: f("pkc") });
       toast("Contreparties enregistrées."); await refresh();
+    },
+    async "make-flash"() {
+      try {
+        const label = document.getElementById("fl").value || "Légendaire éclair";
+        await rpc("admin_create_flash", { p_code: S.adminCode, p_label: label, p_minutes: Number(document.getElementById("fm").value) });
+        toast("Éclair lancé !");
+        if (document.getElementById("fn") && document.getElementById("fn").checked) notify("Légendaire éclair", "Le plus rapide gagne une carte légendaire. Vite !");
+        await refresh();
+      } catch (e) { toast(e.message, true); }
+    },
+    async "send-notif"() {
+      const r = await notify(document.getElementById("nt").value || "Album du Rhum", document.getElementById("nb").value || "Du nouveau dans le jeu", true);
+      if (r) toast(r);
     },
     async "set-fetish"() {
       try {
@@ -899,7 +1004,34 @@
 
   async function loadAdmin() {
     try { S.adminData = { fetish: await rpc("admin_fetish_list", { p_code: S.adminCode }) }; } catch (e) { S.adminData = { fetish: [] }; }
+    try { S.admin.levels = await rpc("admin_levels", { p_code: S.adminCode }); } catch (e) { S.admin.levels = []; }
   }
+
+  // Envoie une notification push à tous via la fonction Supabase "send-push" (voir LISEZ-MOI)
+  async function notify(title, body, verbose) {
+    try {
+      const res = await fetch(CFG.SUPABASE_URL.replace(/\/$/, "") + "/functions/v1/send-push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: CFG.SUPABASE_ANON_KEY, Authorization: "Bearer " + CFG.SUPABASE_ANON_KEY },
+        body: JSON.stringify({ code: S.adminCode, title, body })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || "erreur " + res.status);
+      const msg = `Notification envoyée à ${j.sent || 0} ${plural(j.sent || 0, "appareil", "appareils")}.`;
+      if (verbose) return msg; toast(msg); return msg;
+    } catch (e) {
+      const msg = "Notification non envoyée (" + e.message + "). La fonction send-push est-elle installée ?";
+      toast(msg, true); return null;
+    }
+  }
+
+  app.addEventListener("change", async (ev) => {
+    const el = ev.target;
+    if (el && el.dataset && el.dataset.level) {
+      try { await rpc("admin_set_level", { p_code: S.adminCode, p_player: Number(el.dataset.level), p_level: Number(el.value) }); toast("Niveau enregistré."); }
+      catch (e) { toast(e.message, true); }
+    }
+  });
 
   app.addEventListener("input", (ev) => {
     if (ev.target && ev.target.id === "mq") {
@@ -916,10 +1048,84 @@
     try { await fn(el); } catch (e) { toast(e.message || "Erreur", true); }
   });
 
+  async function doStreak() {
+    try {
+      const r = await rpc("touch_streak", { p_player: S.me.id });
+      S.streak = r;
+      if (r && r.bonus) toast(`Série de ${r.streak} jours : une carte bonus vous attend dans Boosters.`);
+    } catch (e) { /* série pas encore installée */ }
+  }
+
   async function refresh() {
     try { await load(); } catch (e) { toast(e.message, true); }
     render();
   }
+
+
+  // ---------- Notifications : ajout à l'écran d'accueil + push ----------
+  const VAPID_PUBLIC_KEY = CFG.VAPID_PUBLIC_KEY || "BK99JFG5bgQsffvfrWWvQ3jFgNlaoPB_OZBXIezjYLrbhCZga-errNjuw8KyO5_dPu1t_pQzyyrdmv-lZpo3q-g";
+  const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const isStandalone = () => window.navigator.standalone === true || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+  const urlB64 = (s) => { const p = "=".repeat((4 - (s.length % 4)) % 4); const b = (s + p).replace(/-/g, "+").replace(/_/g, "/"); const r = atob(b); return Uint8Array.from([...r].map((c) => c.charCodeAt(0))); };
+
+  async function pushState() {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return "unsupported";
+    if (Notification.permission === "denied") return "denied";
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      const sub = reg && (await reg.pushManager.getSubscription());
+      return sub ? "subscribed" : "ready";
+    } catch (e) { return "unsupported"; }
+  }
+  async function saveSub(sub) {
+    const j = sub.toJSON();
+    await rpc("save_push_sub", { p_player: S.me.id, p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth });
+  }
+  async function enablePush() {
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") throw new Error("Notifications refusées. Vous pourrez les activer dans les réglages du téléphone.");
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64(VAPID_PUBLIC_KEY) });
+    await saveSub(sub);
+  }
+  function later(days) { try { localStorage.setItem("rhum_invite", String(Date.now() + (days || 1) * 86400000)); } catch (e) {} }
+
+  async function maybeInvite() {
+    if (!S.me || document.querySelector(".invite")) return;
+    let flag = ""; try { flag = localStorage.getItem("rhum_invite") || ""; } catch (e) {}
+    const st = await pushState();
+    // déjà abonné : on rattache simplement cet appareil au joueur connecté
+    if (st === "subscribed") {
+      try { const reg = await navigator.serviceWorker.getRegistration(); await saveSub(await reg.pushManager.getSubscription()); } catch (e) {}
+      return;
+    }
+    if (flag === "never" || (flag && Number(flag) > Date.now())) return;
+    const needInstall = isIOS() && !isStandalone();
+    if (!needInstall && (st !== "ready" || !VAPID_PUBLIC_KEY)) return;
+    const m = document.createElement("div");
+    m.className = "modal invite"; m.setAttribute("role", "dialog");
+    m.innerHTML = needInstall
+      ? `<div class="modal-in"><h2 style="margin-top:0">Ajoutez l'album à votre écran d'accueil</h2>
+          <p>Sur iPhone, les notifications ne marchent qu'une fois l'album ajouté à l'écran d'accueil. Trois gestes :</p>
+          <ol class="steps"><li>Touchez le bouton <b>Partager</b> (le carré avec une flèche) dans Safari.</li><li>Choisissez <b>Sur l'écran d'accueil</b>, puis <b>Ajouter</b>.</li><li>Ouvrez l'album depuis sa nouvelle icône : l'activation des notifications vous sera proposée là.</li></ol>
+          <button class="btn" id="inv-ok">J'ai compris</button></div>`
+      : `<div class="modal-in"><h2 style="margin-top:0">Activer les notifications ?</h2>
+          <p>Soyez prévenu des nouveaux quiz, des <b>légendaires éclair</b> (le plus rapide gagne) et des demandes du marché.</p>
+          <button class="btn" id="inv-on">Activer les notifications</button>
+          <button class="btn alt" id="inv-later" style="margin-top:8px">Plus tard</button></div>`;
+    document.body.appendChild(m);
+    const close = () => m.remove();
+    const ok = m.querySelector("#inv-ok"); if (ok) ok.addEventListener("click", () => { later(1); close(); });
+    const lt = m.querySelector("#inv-later"); if (lt) lt.addEventListener("click", () => { later(1); close(); });
+    const on = m.querySelector("#inv-on");
+    if (on) on.addEventListener("click", async () => {
+      on.disabled = true;
+      try { await enablePush(); toast("Notifications activées."); close(); }
+      catch (e) { toast(e.message, true); on.disabled = false; }
+    });
+  }
+  if ("serviceWorker" in navigator) window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });
 
   // ---------- Démarrage ----------
   async function start() {
@@ -936,13 +1142,21 @@
       let pin = ""; try { pin = localStorage.getItem("rhum_pin") || ""; } catch (e) {}
       try { await rpc("player_login", { p_player: S.me.id, p_pin: pin }); } catch (e) { S.me = null; }
     }
-    if (S.me) await load();
+    if (S.me) { await doStreak(); await load(); }
     if (S.adminCode) loadAdmin();
     render();
+    if (S.me) maybeInvite();
     setInterval(() => {
       if (document.hidden || S.overlay || S.run || !S.me || S.tab === "admin") return;
       refresh();
     }, 45000);
+    setInterval(async () => {
+      if (document.hidden || !S.me || S.overlay || S.run || S.tab === "admin") return;
+      const sig = () => JSON.stringify(S.flash.map((f) => [f.id, f.winner_player]));
+      const before = sig();
+      try { await loadFlash(); } catch (e) { return; }
+      if (sig() !== before) render();
+    }, 15000);
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden && S.me && !S.overlay && !S.run && S.tab !== "admin") refresh();
     });
