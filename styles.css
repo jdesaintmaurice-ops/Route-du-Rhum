@@ -333,3 +333,26 @@ textarea { min-height: 220px; font-family: var(--body); }
 .card.missing.r-legendaire { --frame: linear-gradient(150deg, #6b5a1c, #3b3010); }
 .card.missing.r-epique { --frame: linear-gradient(150deg, #5b3c8a, #2e1f4d); }
 .card.missing.r-rare { --frame: linear-gradient(150deg, #34568a, #1d3050); }
+
+/* ---------- Marché ---------- */
+.mk-p { position: relative; }
+.mk-p small { color: var(--ink-soft); font-size: 12px; }
+.mk-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: var(--sea-800); border: 1px solid var(--sea-700); border-radius: 12px; padding: 8px 12px; margin-bottom: 8px; color: var(--ink); }
+.mk-res { background: var(--sea-800); border: 1px solid var(--sea-700); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
+.mk-card b { font-family: var(--display); font-size: 18px; }
+.mk-card small, .mk-mine, .mk-none { color: var(--ink-soft); font-size: 13px; }
+.mk-card.r-legendaire b { color: #FFD84A; }
+.mk-card.r-epique b { color: #D9B8FF; }
+.mk-card.r-rare b { color: #9CC8FF; }
+.mk-new { color: var(--flag-yellow); font-size: 12px; }
+.mk-head { display: flex; gap: 12px; align-items: center; margin: 14px 0; }
+.mk-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.mk-cell { display: flex; flex-direction: column; gap: 4px; align-items: center; text-align: center; }
+.mk-trade { background: var(--sea-800); border: 1px solid var(--sea-700); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; line-height: 1.5; }
+.mk-trade.dim { opacity: .85; }
+.mk-perk { margin-top: 4px; color: var(--flag-yellow); font-weight: 600; }
+.mk-btns { display: flex; gap: 8px; margin-top: 8px; }
+.mk-btns .btn { flex: 1; }
+.mk-status { font-size: 13px; margin-top: 4px; color: var(--ink-soft); }
+.mk-status.s-accepted { color: #5BE0A0; }
+.mk-compose select, .mk-compose input { width: 100%; }
