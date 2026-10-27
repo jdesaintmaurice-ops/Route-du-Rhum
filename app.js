@@ -432,6 +432,17 @@
     return m;
   }
 
+  // Sous une paire incomplète : qui possède la carte manquante (un tap = demande au Village)
+  function ownersLine(e, a, b) {
+    if (!(a || b) || (a && b)) return "";
+    const miss = a ? e.boat : e.skipper;
+    const owners = ownersOf(miss.id).filter((o) => o.p !== S.me.id);
+    const who = owners.length
+      ? owners.map((o) => `<button class="chip own" data-action="mk-want" data-player="${o.p}" data-card="${miss.id}">${esc((playerById(o.p) || {}).first_name)}</button>`).join("")
+      : '<span class="muted">personne pour l\'instant</span>';
+    return `<div class="pair-owners"><span>${a ? "Le bateau" : "Le skipper"} est chez :</span> ${who}</div>`;
+  }
+
   function albumHTML() {
     const counts = ownedCounts();
     const entries = new Map();
@@ -463,7 +474,7 @@
       return `<section class="pair ${full ? "full" : ""}"><div class="pair-cards">
         ${a ? cardHTML(e.skipper, { action: "zoom", count: a }) : cardHTML(e.skipper, { missing: true })}
         ${b ? cardHTML(e.boat, { action: "zoom", count: b }) : cardHTML(e.boat, { missing: true })}
-        </div><div class="pair-badge">${full ? `Paire complète : +${bonus} points` : `Paire : +${bonus} points`}</div></section>`;
+        </div>${ownersLine(e, a, b)}<div class="pair-badge">${full ? `Paire complète : +${bonus} points` : `Paire : +${bonus} points`}</div></section>`;
     }).join("");
 
     return `<h1>Mon album Rhumini</h1>
@@ -491,7 +502,15 @@
     return `<h1>Quiz</h1><p class="lede">Deux quiz par jour. Chaque bonne réponse te rapporte une carte (5 au maximum) et 10 points. Un sans-faute et tu gagnes une carte légendaire en bonus !</p>
       ${normal.length ? normal.map(card).join("") : '<p class="empty">Pas de nouveau quiz pour l\'instant. Le prochain arrive bientôt.</p>'}
       ${hard.length ? `<h2>Quiz difficile</h2><p class="muted" style="margin:-4px 0 12px;font-size:14px">20 points par bonne réponse et le titre de Maître du quiz. Pas de cartes.</p>${hard.map(card).join("")}` : ""}
-      ${done.length ? `<h2>Déjà fait</h2>${done.map((z) => { const s = S.subs.find((x) => x.quiz_id === z.id); return `<div class="q-card"><div class="grow"><h3>${esc(z.title)}</h3></div><b style="font:800 30px/1 var(--display)">${s.score}/${s.total}</b></div>`; }).join("")}` : ""}`;
+      ${done.length ? `<h2>Déjà fait</h2>${done.map((z) => { const s = S.subs.find((x) => x.quiz_id === z.id); return `<div class="q-card"><div class="grow"><h3>${esc(z.title)}</h3></div><b style="font:800 30px/1 var(--display)">${s.score}/${s.total}</b><button class="btn small alt" data-action="review-quiz" data-id="${z.id}" style="margin-left:10px">Revoir</button></div>`; }).join("")}` : ""}`;
+  }
+
+  function reviewHTML(qs, results) {
+    return `<div class="review">${qs.map((qq, i) => { const rr = (results || [])[i]; if (!rr) return "";
+      return `<div class="rv ${rr.ok ? "good" : "bad"}"><b>${i + 1}. ${esc(qq.question)}</b>
+        ${rr.ok ? `<div class="rv-line ok">✓ Bonne réponse : ${esc(qq.choices[rr.correct_index])}</div>`
+          : `<div class="rv-line ko">✗ Ta réponse : ${rr.given == null ? "aucune" : esc(qq.choices[rr.given])}</div><div class="rv-line ok">✓ La bonne réponse : ${esc(qq.choices[rr.correct_index])}</div>`}
+        ${rr.explanation ? `<div class="why">${esc(rr.explanation)}</div>` : ""}</div>`; }).join("")}</div>`;
   }
 
   function quizRunHTML() {
@@ -500,10 +519,10 @@
       const res = r.result;
       const qs = r.qs;
       return `<p class="q-step">${esc(r.quiz.title)}</p><div class="result-score">${res.score}<small>/${res.total}</small></div>
-        <p class="lede" style="margin-top:8px">${res.kind === "hard" ? `${res.score * 20} points ajoutés au classement.` : res.score === 0 ? "Aucune carte cette fois. Rendez-vous au prochain quiz !" : res.booster_id ? `Booster gagné : ${res.cards || res.score} ${plural(res.cards || res.score, "carte", "cartes")}${res.bonus_legendary ? " et une carte légendaire en bonus" : ""}.` : ""}</p>
+        <p class="lede" style="margin-top:8px">${r.review ? "" : res.kind === "hard" ? `${res.score * 20} points ajoutés au classement.` : res.score === 0 ? "Aucune carte cette fois. Rendez-vous au prochain quiz !" : res.booster_id ? `Booster gagné : ${res.cards || res.score} ${plural(res.cards || res.score, "carte", "cartes")}${res.bonus_legendary ? " et une carte légendaire en bonus" : ""}.` : ""}</p>
+        <h2>Les réponses</h2>${reviewHTML(qs, res.results)}
         ${res.booster_id ? '<button class="btn" data-action="open-from-quiz" data-id="' + res.booster_id + '" data-bonus="' + (res.bonus_legendary ? 1 : 0) + '">Ouvrir mon booster</button> ' : ""}
-        <button class="btn ghost" data-action="quiz-done">Retour</button>
-        <div class="review">${qs.map((qq, i) => { const rr = res.results[i]; return `<div><b>${esc(qq.question)}</b>${rr.ok ? "Bonne réponse : " : `Ta réponse : ${rr.given == null ? "aucune" : esc(qq.choices[rr.given])}<br>Bonne réponse : `}${esc(qq.choices[rr.correct_index])}${rr.explanation ? `<div class="why">${esc(rr.explanation)}</div>` : ""}</div>`; }).join("")}</div>`;
+        <button class="btn ghost" data-action="quiz-done">Retour</button>`;
     }
     const qq = r.qs[r.i];
     const sel = r.answers[r.i];
@@ -677,12 +696,12 @@
     const mine = S.cards.filter((c) => counts.has(c.id)).sort((x, y) => (counts.get(y.id) - counts.get(x.id)) || x.name.localeCompare(y.name));
     if (!tier && !mine.length) return toast("Tu n'as encore aucune carte à proposer.", true);
     const opts = mine.map((c) => `<option value="${c.id}">${esc(c.name)} (${c.kind === "skipper" ? "skipper" : "bateau"}, ${RAR_LABEL[c.rarity]})${counts.get(c.id) > 1 ? " ×" + counts.get(c.id) : ""}</option>`).join("");
-    const list = (S.mk.perks && S.mk.perks[tier || "leger"]) || [];
+    const list = [...((S.mk.perks && S.mk.perks.leger) || []), ...((S.mk.perks && S.mk.perks.costaud) || [])];
     const m = document.createElement("div");
     m.className = "modal"; m.setAttribute("role", "dialog");
     m.innerHTML = `<div class="modal-in mk-compose"><h2 style="margin-top:0">Demander à ${esc(to.first_name)}</h2>
       <p>Tu veux : ${cardLabel(want.id)}</p>
-      ${tier ? `<p class="tier-note t-${tier}">Carte ${RAR_LABEL[want.rarity].toLowerCase()} : pas d'échange de carte. Choisis une contrepartie <b>${TIER_LABEL[tier]}</b>.</p>`
+      ${tier ? `<p class="tier-note t-${tier}">Carte ${RAR_LABEL[want.rarity].toLowerCase()} : impossible de l'échanger avec une carte. Propose une <b>action</b> !</p>`
         : `<div class="field"><label for="mkgive">Je donne</label><select id="mkgive">${opts}</select></div><p class="muted" style="font-size:14px">Un petit extra du week-end est facultatif.</p>`}
       <div class="perks">${perkCards(list)}</div>
       <div class="field"><label for="mkother">Autre : écris ta proposition</label><input id="mkother" maxlength="120" placeholder="Ex. je te paie un café samedi"></div>
@@ -764,13 +783,15 @@
         <button class="btn" data-action="make-flash">Lancer l'éclair</button></div>
       <div class="panel"><h3>Niveaux des joueurs</h3><p class="muted" style="font-size:14px;margin-bottom:10px">De 1 (débutant) à 5 (expert). Invisible pour les autres joueurs. Sert à choisir qui voit un quiz difficile.</p>
         ${((S.admin && S.admin.levels) || []).map((p) => `<div class="lvl"><span>${esc(p.name)}</span><select data-level="${p.id}">${[1, 2, 3, 4, 5].map((n) => `<option value="${n}" ${n === p.level ? "selected" : ""}>${n}</option>`).join("")}</select></div>`).join("") || '<p class="muted">Installez la dernière version de 01_schema.sql.</p>'}</div>
+      <div class="panel"><h3>Historique des cartes</h3><p class="muted" style="font-size:14px;margin-bottom:10px">Les cartes obtenues par chaque joueur, avec leur origine. Les plus récentes d'abord.</p>
+        <div class="field"><label for="hp">Joueur</label><select id="hp" data-hist="1"><option value="">Tous les joueurs</option>${S.players.map((p) => `<option value="${p.id}" ${String(S.admin.histP || "") === String(p.id) ? "selected" : ""}>${esc(p.first_name)}</option>`).join("")}</select></div>
+        <div class="log hist">${(() => { const rows = (S.admin.hist || []).filter((h) => !S.admin.histP || String(h.player_id) === String(S.admin.histP)).slice(0, 120); return rows.length ? rows.map((h) => `<div class="hist-row r-${h.rarity}"><b>${esc(h.player)}</b> · ${esc(h.card)} <small>(${h.kind === "skipper" ? "skipper" : "bateau"}, ${esc(RAR_LABEL[h.rarity] || h.rarity)})</small><br><small>${esc(h.origin)} · ${new Date(h.at).toLocaleString("fr-FR", { weekday: "short", hour: "2-digit", minute: "2-digit" })}</small></div>`).join("") : "Aucune carte pour le moment."; })()}</div></div>
       <div class="panel"><h3>Envoyer une notification</h3>
         <div class="field"><label for="nt">Titre</label><input id="nt" value="Album du Rhum"></div>
         <div class="field"><label for="nb">Message</label><input id="nb" placeholder="Un nouveau quiz vient d'arriver"></div>
         <button class="btn" data-action="send-notif">Envoyer à tous</button></div>
-      <div class="panel"><h3>Contreparties du marché</h3><p class="muted" style="font-size:14px;margin-bottom:10px">Une proposition par ligne, commençant par « Week-end · » ou « Semaine · ». Léger pour les cartes épiques, Costaud pour les légendaires. Les joueurs peuvent aussi écrire « Autre ».</p>
-        <div class="field"><label for="pkl">Léger</label><textarea id="pkl">${esc(((S.mk.perks || {}).leger || []).join("\n"))}</textarea></div>
-        <div class="field"><label for="pkc">Costaud</label><textarea id="pkc">${esc(((S.mk.perks || {}).costaud || []).join("\n"))}</textarea></div><button class="btn" data-action="save-perks">Enregistrer</button></div>
+      <div class="panel"><h3>Contreparties du marché</h3><p class="muted" style="font-size:14px;margin-bottom:10px">Une proposition par ligne, commençant par « Week-end · » ou « Semaine · ». Elles sont proposées pour les cartes épiques et légendaires. Les joueurs peuvent aussi écrire « Autre ».</p>
+        <div class="field"><label for="pkl">Actions proposées</label><textarea id="pkl" rows="12">${esc([...((S.mk.perks || {}).leger || []), ...((S.mk.perks || {}).costaud || [])].join("\n"))}</textarea></div><button class="btn" data-action="save-perks">Enregistrer</button></div>
       <div class="panel"><h3>Quiz ouverts</h3>${S.quizzes.filter((z) => z.is_open).map((z) => `<div class="q-card"><div class="grow"><h3>${esc(z.title)}</h3></div><button class="btn small alt" data-action="close-quiz" data-id="${z.id}">Fermer</button></div>`).join("") || '<p class="muted">Aucun.</p>'}</div>
       <button class="btn ghost" data-action="tab" data-tab="score">Quitter l'espace organisateur</button>`;
   }
@@ -929,6 +950,15 @@
         await load(); render(); window.scrollTo(0, 0);
       } catch (e) { toast(e.message, true); S.run = null; await refresh(); }
     },
+    async "review-quiz"(el) {
+      const quiz = S.quizzes.find((z) => z.id === Number(el.dataset.id));
+      try {
+        const results = await rpc("quiz_review", { p_player: S.me.id, p_quiz: quiz.id });
+        const sub = S.subs.find((x) => x.quiz_id === quiz.id) || { score: 0, total: results.length };
+        S.run = { quiz, qs: quizQuestions(quiz.id), i: 0, answers: [], review: true, result: { score: sub.score, total: sub.total, results, kind: quiz.kind } };
+        render(); window.scrollTo(0, 0);
+      } catch (e) { toast(e.message, true); }
+    },
     async "quiz-done"() { S.run = null; await refresh(); },
     async "open-from-quiz"(el) { S.run = null; S.tab = "boosters"; await doOpen(el.dataset.id, "Booster du quiz", Number(el.dataset.bonus || 0)); },
     async open(el) { const b = S.boosters.find((x) => x.id === Number(el.dataset.id)); await doOpen(el.dataset.id, b ? b.label : "Booster", b ? b.bonus_legendary : 0); },
@@ -991,7 +1021,7 @@
     },
     async "save-perks"() {
       const f = (id) => document.getElementById(id).value.split("\n").map((x) => x.trim().replace(/\|/g, "/")).filter(Boolean).join("|");
-      await rpc("admin_set_perks", { p_code: S.adminCode, p_leger: f("pkl"), p_costaud: f("pkc") });
+      await rpc("admin_set_perks", { p_code: S.adminCode, p_leger: f("pkl"), p_costaud: "" });
       toast("Contreparties enregistrées."); await refresh();
     },
     async "make-flash"() {
@@ -1022,6 +1052,7 @@
   async function loadAdmin() {
     try { S.adminData = { fetish: await rpc("admin_fetish_list", { p_code: S.adminCode }) }; } catch (e) { S.adminData = { fetish: [] }; }
     try { S.admin.levels = await rpc("admin_levels", { p_code: S.adminCode }); } catch (e) { S.admin.levels = []; }
+    try { S.admin.hist = await rpc("admin_player_cards", { p_code: S.adminCode }); } catch (e) { S.admin.hist = []; }
   }
 
   // Envoie une notification push à tous via la fonction Supabase "send-push" (voir LISEZ-MOI)
@@ -1044,6 +1075,7 @@
 
   app.addEventListener("change", async (ev) => {
     const el = ev.target;
+    if (el && el.dataset && el.dataset.hist) { S.admin.histP = el.value; render(); return; }
     if (el && el.dataset && el.dataset.level) {
       try { await rpc("admin_set_level", { p_code: S.adminCode, p_player: Number(el.dataset.level), p_level: Number(el.value) }); toast("Niveau enregistré."); }
       catch (e) { toast(e.message, true); }
