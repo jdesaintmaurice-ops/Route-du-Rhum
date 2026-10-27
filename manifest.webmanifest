@@ -1,6 +1,6 @@
 {
-  "name": "L'album du Rhum",
-  "short_name": "Album du Rhum",
+  "name": "Rhumnini",
+  "short_name": "Rhumnini",
   "description": "Le jeu de cartes de la Route du Rhum",
   "start_url": "./",
   "scope": "./",
