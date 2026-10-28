@@ -307,11 +307,17 @@
     if (!S.me) { S.event = { mode: null }; S.letter = null; S.recap = []; return; }
     try { S.event = (await rpc("event_state", { p_player: S.me.id })) || { mode: null }; } catch (e) { S.event = { mode: null }; }
     S.letter = null;
+    pingAlerts();
     if (S.event.mode === "pirate") {
-      pingAlerts();
       try { S.letter = await rpc("pirate_letter", { p_player: S.me.id }); } catch (e) { S.letter = null; }
     }
     try { S.recap = (await rpc("pirate_recap", { p_player: S.me.id })) || []; } catch (e) { S.recap = []; }
+    S.com = null;
+    if (S.event.mode === "communiste") await loadCom();
+  }
+  async function loadCom() {
+    try { S.com = await rpc("com_state", { p_player: S.me.id }); } catch (e) { S.com = null; }
+    if (S.com && S.com.settled) { try { S.scores = await q(S.sb.from("scores_v").select("*")); } catch (e) {} }
   }
   // Alertes automatiques (échanges, vols) : la fonction send-push vérifie tout dans la base avant d'envoyer
   function appPush(payload) {
@@ -323,8 +329,10 @@
       }).catch(() => {});
     } catch (e) {}
   }
-  const pingAlerts = () => appPush({ check_raids: true });
+  let lastPing = 0;
+  const pingAlerts = (force) => { if (!force && Date.now() - lastPing < 50000) return; lastPing = Date.now(); appPush({ check_raids: true, check_daily: true, check_com: true }); };
   const isPirate = () => !!(S.me && S.event && S.event.mode === "pirate");
+  const isCom = () => !!(S.me && S.event && S.event.mode === "communiste");
 
   async function loadFlash() {
     S.flash = await q(S.sb.from("flash_drops").select("*").order("id", { ascending: false }).limit(6));
@@ -342,11 +350,19 @@
   function jollyRoger(w) {
     return `<svg class="jolly" viewBox="0 0 64 44" width="${w || 40}" aria-hidden="true"><rect width="64" height="44" rx="3" fill="#050505" stroke="#EDE6D8" stroke-width="1.5"/><path d="M14 30 L50 40 M50 30 L14 40" stroke="#EDE6D8" stroke-width="3" stroke-linecap="round"/><circle cx="32" cy="17" r="10" fill="#EDE6D8"/><rect x="27" y="24" width="10" height="6" rx="1.5" fill="#EDE6D8"/><circle cx="28" cy="16" r="2.6" fill="#050505"/><circle cx="36" cy="16" r="2.6" fill="#050505"/><path d="M32 19 l-1.6 3.4 h3.2z" fill="#050505"/></svg>`;
   }
+  function comFlag(w) {
+    return `<svg class="jolly" viewBox="0 0 64 44" width="${w || 40}" aria-hidden="true"><rect width="64" height="44" rx="3" fill="#D81E27"/><polygon points="18,6 21.2,14.6 30.4,14.9 23.2,20.6 25.7,29.4 18,24.3 10.3,29.4 12.8,20.6 5.6,14.9 14.8,14.6" fill="#FFD21F"/><g fill="none" stroke="#FFD21F" stroke-width="2" stroke-linecap="round"><path d="M38 10 h18 M38 17 h14 M38 24 h18 M38 31 h10"/></g></svg>`;
+  }
   function pennants() {
     let p = "";
     if (isPirate()) {
       const cols = ["#B3162B", "#050505", "#EDE6D8", "#050505"];
       for (let i = 0; i < 24; i++) p += `<polygon points="${i * 10},0 ${i * 10 + 10},0 ${i * 10 + 5},9" fill="${cols[i % 4]}"/>`;
+      return `<svg class="pennants" viewBox="0 0 240 9" preserveAspectRatio="none" aria-hidden="true">${p}</svg>`;
+    }
+    if (isCom()) {
+      const cols = ["#E3242B", "#FFD21F"];
+      for (let i = 0; i < 24; i++) p += `<polygon points="${i * 10},0 ${i * 10 + 10},0 ${i * 10 + 5},9" fill="${cols[i % 2]}"/>`;
       return `<svg class="pennants" viewBox="0 0 240 9" preserveAspectRatio="none" aria-hidden="true">${p}</svg>`;
     }
     for (let i = 0; i < 24; i++) p += `<polygon points="${i * 10},0 ${i * 10 + 10},0 ${i * 10 + 5},9" fill="${FLAGS[i % 4]}"/>`;
@@ -428,14 +444,15 @@
     const todo = openQuizzes().length;
     const tabs = [["marche", "Village"], ["album", "Album"], ["quiz", "Quiz"], ["boosters", "Boosters"], ["score", "Score"]];
     if (isPirate()) tabs.splice(1, 0, ["pillage", "Pillage"]);
+    if (isCom()) tabs.splice(1, 0, ["patrimoine", "Patrimoine"]);
     const incoming = S.mk.trades.filter((t) => t.to_player === S.me.id && t.status === "pending").length;
-    const badge = { quiz: todo, boosters: pending, marche: incoming, pillage: (isPirate() && S.letter && !S.letter.done) ? 1 : 0 };
+    const badge = { quiz: todo, boosters: pending, marche: incoming, pillage: (isPirate() && S.letter && !S.letter.done) ? 1 : 0, patrimoine: (isCom() && S.com && S.com.me && S.com.me.status === "open" && !S.com.closed) ? 1 : 0 };
     try { if (navigator.setAppBadge) navigator.setAppBadge(todo + pending + incoming); } catch (e) {}
     app.innerHTML = `<header class="top"><div class="top-row">
         <button class="top-who" data-action="switch" aria-label="Changer de joueur">${window.RhumAvatar.render(S.me.avatar, 44)}
           <span><span class="top-name">${esc(S.me.first_name)}</span><br><span class="top-sub">Changer de joueur</span></span></button>
         <div class="top-score"><b>${myScore().total}</b><span>points</span></div></div>${pennants()}</header>
-      <main id="view" class="view">${pirateBanner()}${flashBanner()}${inner}</main>
+      <main id="view" class="view">${pirateBanner()}${comBanner()}${flashBanner()}${inner}</main>
       <nav class="tabbar" aria-label="Navigation"><div class="tabbar-in">${tabs.map(([k, l]) => `<button class="tab" data-action="tab" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ""}>${l}${badge[k] ? `<span class="dot" aria-label="${badge[k]} à faire">${badge[k]}</span>` : ""}</button>`).join("")}</div></nav>`;
   }
 
@@ -623,7 +640,7 @@
         const w = (v) => (v / max) * 100;
         return `<li class="row ${S.me && r.player_id === S.me.id ? "me" : ""}"><span class="rank">${i + 1}</span>${window.RhumAvatar.render(p.avatar, 48)}
           <div><div class="row-name">${esc(r.first_name)}${masters.has(r.player_id) ? ' <span class="title-tag">Maître du quiz</span>' : ""}</div><div class="bar"><i style="width:${w(r.quiz_points)}%"></i><i style="width:${w(r.card_points)}%"></i><i style="width:${w(r.pair_points)}%"></i></div>
-          <div class="row-det">${r.n_cards} ${plural(r.n_cards, "carte", "cartes")} · ${r.n_pairs} ${plural(r.n_pairs, "paire", "paires")}</div></div>
+          <div class="row-det">${r.n_cards} ${plural(r.n_cards, "carte", "cartes")} · ${r.n_pairs} ${plural(r.n_pairs, "paire", "paires")}${r.adjust_points ? ` · impôt et dons ${r.adjust_points > 0 ? "+" : ""}${r.adjust_points}` : ""}</div></div>
           <span class="row-total">${r.total}</span></li>`;
       }).join("")}</ol>
       <p style="margin-top:28px"><button class="link" data-action="admin">Espace organisateur</button></p>`;
@@ -789,7 +806,7 @@
     const players = S.players.map((p) => `<option value="${p.id}">${esc(p.first_name)}</option>`).join("");
     const cardsOpt = S.cards.slice().sort((a, b) => a.name.localeCompare(b.name)).map((c) => `<option value="${c.id}">${esc(c.name)} (${c.kind === "skipper" ? "skipper" : "bateau"}, ${RAR_LABEL[c.rarity]})</option>`).join("");
     const fet = (S.adminData && S.adminData.fetish) || [];
-    return `<h1>Espace organisateur</h1>
+    const all = `<!--S:jeu-->
       <div class="panel"><h3>Publier un quiz</h3>
         <div class="field"><label for="qt">Titre</label><input id="qt" placeholder="Mardi : les bateaux"></div>
         <div class="field"><label for="qb">Questions</label><textarea id="qb" placeholder="Quelle classe compte le plus de skippers ?&#10;- Ultim&#10;* Class40&#10;- IMOCA&#10;&#10;[perso] Qui ronfle le plus ?&#10;* Paul&#10;- Manu&#10;> Explication facultative"></textarea></div>
@@ -798,97 +815,258 @@
           <div class="field"><label for="ql">Niveau minimum</label><select id="ql">${[1, 2, 3, 4, 5].map((n) => `<option value="${n}">${n}${n === 1 ? " (tout le monde)" : ""}</option>`).join("")}</select></div></div>
         <label class="check"><input type="checkbox" id="qn" checked> Prévenir les joueurs par notification</label>
         <button class="btn" data-action="publish-quiz">Publier</button></div>
+<!--S:jeu-->
       <div class="panel"><h3>Lâcher un drop</h3><div class="inline"><div class="field"><label for="dl">Nom</label><input id="dl" value="Drop de midi"></div><div class="field"><label for="dm">Minutes</label><input id="dm" type="number" value="60" min="5"></div></div>
         <div class="inline"><div class="field"><label for="ds">Cartes</label><input id="ds" type="number" value="5" min="1" max="10"></div><div class="field"><label for="dluck">Chance bonus</label><select id="dluck"><option value="0">Non</option><option value="1">Oui</option></select></div></div>
+        <label class="check"><input type="checkbox" id="dn" checked> Prévenir les joueurs par notification</label>
         <button class="btn" data-action="make-drop">Lâcher</button></div>
+<!--S:cadeaux-->
       <div class="panel"><h3>Donner un booster</h3><div class="inline"><div class="field"><label for="bp">À qui</label><select id="bp"><option value="">Tout le monde</option>${players}</select></div><div class="field"><label for="bs">Cartes</label><input id="bs" type="number" value="5" min="1" max="10"></div></div>
         <div class="field"><label for="bl">Nom</label><input id="bl" value="Cadeau"></div><button class="btn" data-action="give-booster">Donner</button></div>
+<!--S:cadeaux-->
       <div class="panel"><h3>Offrir une carte</h3><div class="field"><label for="gp">Joueur</label><select id="gp">${players}</select></div>
         <div class="field"><label for="gc">Carte</label><select id="gc">${cardsOpt}</select></div><button class="btn" data-action="give-card">Offrir</button></div>
+<!--S:cadeaux-->
       <div class="panel"><h3>Carte fétiche</h3><p class="muted" style="font-size:14px;margin-bottom:10px">Chance en % qu'elle sorte à chaque carte tirée par ce joueur. 0 pour retirer.</p>
         <div class="field"><label for="fp">Joueur</label><select id="fp">${players}</select></div><div class="field"><label for="fc">Carte</label><select id="fc">${cardsOpt}</select></div>
         <div class="field"><label for="fx">Chance (%)</label><input id="fx" type="number" value="10" min="0" max="100"></div><button class="btn" data-action="set-fetish">Enregistrer</button>
         ${fet.length ? `<div class="log" style="margin-top:12px">${fet.map((f) => `${esc(f.player)} : ${esc(f.card)} à ${f.chance} %`).join("<br>")}</div>` : ""}</div>
+<!--S:jeu-->
       <div class="panel"><h3>Légendaire éclair</h3><p class="muted" style="font-size:14px;margin-bottom:10px">Une carte légendaire pour le plus rapide. Une seule victoire par joueur.</p>
         <div class="inline"><div class="field"><label for="fl">Nom</label><input id="fl" value="Légendaire éclair"></div><div class="field"><label for="fm">Minutes</label><input id="fm" type="number" value="30" min="1"></div></div>
         <label class="check"><input type="checkbox" id="fn" checked> Prévenir les joueurs par notification</label>
         <button class="btn" data-action="make-flash">Lancer l'éclair</button></div>
+<!--S:joueurs-->
       <div class="panel"><h3>Niveaux des joueurs</h3><p class="muted" style="font-size:14px;margin-bottom:10px">De 1 (débutant) à 5 (expert). Invisible pour les autres joueurs. Sert à choisir qui voit un quiz difficile.</p>
         ${((S.admin && S.admin.levels) || []).map((p) => `<div class="lvl"><span>${esc(p.name)}</span><select data-level="${p.id}">${[1, 2, 3, 4, 5].map((n) => `<option value="${n}" ${n === p.level ? "selected" : ""}>${n}</option>`).join("")}</select></div>`).join("") || '<p class="muted">Installez la dernière version de 01_schema.sql.</p>'}</div>
+<!--S:suivi-->
       <div class="panel"><h3>Historique des cartes</h3><p class="muted" style="font-size:14px;margin-bottom:10px">Les cartes obtenues par chaque joueur, avec leur origine. Les plus récentes d'abord.</p>
         <div class="field"><label for="hp">Joueur</label><select id="hp" data-hist="1"><option value="">Tous les joueurs</option>${S.players.map((p) => `<option value="${p.id}" ${String(S.admin.histP || "") === String(p.id) ? "selected" : ""}>${esc(p.first_name)}</option>`).join("")}</select></div>
         <div class="log hist">${(() => { const rows = (S.admin.hist || []).filter((h) => !S.admin.histP || String(h.player_id) === String(S.admin.histP)).slice(0, 120); return rows.length ? rows.map((h) => `<div class="hist-row r-${h.rarity}"><b>${esc(h.player)}</b> · ${esc(h.card)} <small>(${h.kind === "skipper" ? "skipper" : "bateau"}, ${esc(RAR_LABEL[h.rarity] || h.rarity)})</small><br><small>${esc(h.origin)} · ${new Date(h.at).toLocaleString("fr-FR", { weekday: "short", hour: "2-digit", minute: "2-digit" })}</small></div>`).join("") : "Aucune carte pour le moment."; })()}</div></div>
+<!--S:joueurs-->
       <div class="panel"><h3>Envoyer une notification</h3>
         <div class="field"><label for="nt">Titre</label><input id="nt" value="Album du Rhum"></div>
         <div class="field"><label for="nb">Message</label><input id="nb" placeholder="Un nouveau quiz vient d'arriver"></div>
         <button class="btn" data-action="send-notif">Envoyer à tous</button></div>
-      <div class="panel"><h3>Mode pirate</h3>${(() => {
+<!--S:ev-->
+      <div class="panel"><h3>Mode événement</h3>${(() => {
         const pr = S.admin.pirate || { targets: [], raids: [], event: {} }, ev = pr.event || {};
-        const on = ev.mode === "pirate";
+        const on = !!ev.mode, modeName = ev.mode === "communiste" ? "Communiste" : "Pirate";
         const who = ev.test ? (playerById(Number(ev.test)) || {}).first_name : null;
-        const state = on ? `<p class="log"><b>Actif</b> ${who ? "en test pour " + esc(who) : "pour tout le monde"}${ev.until ? " jusqu'au " + esc(new Date(ev.until).toLocaleString("fr-FR", { weekday: "short", hour: "2-digit", minute: "2-digit" })) : ""}.</p>` : '<p class="muted">Aucun mode actif.</p>';
+        const state = on ? `<p class="log"><b>${modeName} actif</b> ${who ? "en test pour " + esc(who) : "pour tout le monde"}${ev.until ? " jusqu'au " + esc(new Date(ev.until).toLocaleString("fr-FR", { weekday: "short", hour: "2-digit", minute: "2-digit" })) : ""}.</p>` : '<p class="muted">Aucun mode actif.</p>';
         const optP = S.players.map((p) => `<option value="${p.id}" ${S.me && p.id === S.me.id ? "selected" : ""}>Test : seulement ${esc(p.first_name)}</option>`).join("");
         const tg = pr.targets.length ? pr.targets.map((t) => `${esc(t.holder)} détient le code de ${esc(t.target)}`).join("<br>") : "Aucun code attribué : lance 10_pirate_codes.sql dans Supabase.";
         const rd = pr.raids.length ? pr.raids.slice(0, 20).map((r) => `${esc(r.thief)} → ${esc(r.victim)} : ${r.n} ${plural(r.n, "carte", "cartes")}${r.test ? " (test)" : ""}${r.notified ? "" : " · alerte à venir"}`).join("<br>") : "Aucun pillage.";
         return `${state}
-          <div class="field"><label for="evm">Mode</label><select id="evm"><option value="">Aucun (arrêter)</option><option value="pirate" ${on ? "selected" : ""}>Pirate</option></select></div>
+          <div class="field"><label for="evm">Mode</label><select id="evm"><option value="">Aucun (arrêter)</option><option value="pirate" ${ev.mode === "pirate" ? "selected" : ""}>Pirate</option><option value="communiste" ${ev.mode === "communiste" ? "selected" : ""}>Communiste</option></select></div>
           <div class="field"><label for="evt">Qui le voit ?</label><select id="evt"><option value="">Tout le monde (réel)</option>${optP}</select></div>
           <div class="field"><label for="evu">Fin automatique (facultatif)</label><input id="evu" type="datetime-local"></div>
-          <button class="btn" data-action="set-event">Appliquer</button>
-          <h4 style="margin:14px 0 4px">Codes attribués</h4><div class="log">${tg}</div>
+          <label class="check"><input type="checkbox" id="evn" checked> Prévenir les joueurs par notification (mode lancé pour tout le monde, pas en test)</label>
+          <button class="btn" data-action="set-event">Appliquer</button></div>
+<!--S:suivi-->
+      <div class="panel"><h3>Pirates : codes et pillages</h3>
+          <h4 style="margin:6px 0 4px">Codes attribués</h4><div class="log">${tg}</div>
           <h4 style="margin:14px 0 4px">Pillages</h4><div class="log">${rd}</div>`;
       })()}</div>
+<!--S:ev-->
+      <div class="panel"><h3>Impôt communiste</h3>${comAdminHTML()}</div>
+<!--S:jeu-->
       <div class="panel"><h3>Texte des quiz</h3><p class="muted" style="font-size:14px;margin-bottom:10px">Questions, bonnes réponses (*) et explications (>) de chaque quiz publié, à copier.</p>
         ${(() => { const qs = S.admin.quizTexts || []; if (!qs.length) return '<p class="muted">Aucun quiz.</p>'; const cur = qs.find((x) => String(x.id) === String(S.admin.qtId)) || qs[0];
           return `<div class="field"><label for="qtsel">Quiz</label><select id="qtsel" data-qtext="1">${qs.map((x) => `<option value="${x.id}" ${x.id === cur.id ? "selected" : ""}>${esc(x.title)}${x.kind === "hard" ? " (difficile)" : ""}</option>`).join("")}</select></div>
           <textarea id="qtout" rows="12" readonly>${esc(cur.text || "")}</textarea><button class="btn small" data-action="copy-quiz">Copier</button>`; })()}</div>
+<!--S:jeu-->
       <div class="panel"><h3>Quiz ouverts</h3>${S.quizzes.filter((z) => z.is_open).map((z) => `<div class="q-card"><div class="grow"><h3>${esc(z.title)}</h3></div><button class="btn small alt" data-action="close-quiz" data-id="${z.id}">Fermer</button></div>`).join("") || '<p class="muted">Aucun.</p>'}</div>
-      <button class="btn ghost" data-action="tab" data-tab="score">Quitter l'espace organisateur</button>`;
+<!--S:end-->`;
+    return adminShell(all);
+  }
+  function adminShell(all) {
+    const parts = all.split(/<!--S:(\w+)-->/), secs = {};
+    for (let i = 1; i < parts.length; i += 2) if (parts[i] !== "end") secs[parts[i]] = (secs[parts[i]] || "") + parts[i + 1];
+    const cur = S.admin.sec || "ev";
+    const tabs = [["ev", "Événements"], ["jeu", "Jeu"], ["cadeaux", "Cadeaux"], ["joueurs", "Joueurs"], ["suivi", "Suivi"]];
+    const ev = (S.admin.pirate && S.admin.pirate.event) || {}, st = S.admin.status || {};
+    const modeTxt = ev.mode ? (ev.mode === "communiste" ? "Communiste" : "Pirate") + (ev.test ? " (test)" : "") : "aucun";
+    const bar = `<div class="adm-bar"><span><b>Mode</b> ${modeTxt}</span><span><b>Quiz ouverts</b> ${st.open_quizzes != null ? st.open_quizzes : S.quizzes.filter((z) => z.is_open).length}</span><span><b>Notifications</b> ${st.push_players != null ? st.push_players + " / " + S.players.length + " joueurs" : "—"}</span></div>`;
+    return `<h1>Espace organisateur</h1>${bar}
+      <div class="chips" role="group" aria-label="Sections">${tabs.map(([k, l]) => `<button class="chip" data-action="admin-sec" data-sec="${k}" aria-pressed="${cur === k}">${l}</button>`).join("")}</div>
+      ${secs[cur] || ""}<button class="btn ghost" data-action="tab" data-tab="score">Quitter l'espace organisateur</button>`;
+  }
+  function comAdminHTML() {
+    const cm = S.admin.com, ev = (S.admin.pirate && S.admin.pirate.event) || {};
+    if (!cm) return '<p class="muted">Lance 11_communiste.sql dans Supabase pour installer le mode.</p>';
+    const P = cm.params, W = cm.wave, locked = !!(W && !W.test), pct = (x) => Math.round(Number(x) * 100);
+    const on = ev.mode === "communiste";
+    const rows = cm.rows.map((r) => `<tr><td>${esc(r.name)}</td><td>${r.cards}</td><td>${r.points}</td><td>${W ? (r.tax != null ? r.tax + " (" + pct(r.rate) + " %)" : "—") : r.sim_tax + " (" + pct(r.sim_rate) + " %)"}</td>${W ? `<td>${r.status === "open" ? "à redistribuer" : r.status === "done" ? "fait" : r.status === "auto" ? "d'office, malus " + r.malus : "—"}${r.given ? " · donné " + r.given : ""}</td>` : ""}</tr>`).join("");
+    const waveTxt = W ? `<p class="log">Vague ${W.test ? "de TEST" : "RÉELLE"} lancée. Fin du délai : ${esc(new Date(W.deadline).toLocaleString("fr-FR", { weekday: "short", hour: "2-digit", minute: "2-digit" }))}. ${W.closed ? "<b>Clôturée.</b>" : "En cours."} Seuil : ${Math.round(W.threshold)} points.</p>` : `<p class="muted">Aucune vague lancée. Le tableau est une simulation avec le barème ci-dessous. Seuil actuel : ${Math.round(cm.threshold)} points.</p>`;
+    const field = (id, label, v) => `<div class="field"><label for="${id}">${label}</label><input id="${id}" type="number" step="any" value="${v}" ${locked ? "disabled" : ""}></div>`;
+    return `${on ? "" : '<p class="muted">Active d\'abord « Communiste » dans Mode événement (en test pour toi seul, par exemple).</p>'}${waveTxt}
+      <div class="com-adm-scroll"><table class="com-tab"><thead><tr><th>Joueur</th><th>Cartes</th><th>Points</th><th>${W ? "Impôt" : "Impôt simulé"}</th>${W ? "<th>État</th>" : ""}</tr></thead><tbody>${rows}</tbody></table></div>
+      <h4 style="margin:14px 0 6px">Barème</h4>
+      <div class="inline">${field("cs1", "Seuil (× moyenne des points)", P.seuil)}${field("cs2", "Pente (% par seuil de plus)", pct(P.pente))}</div>
+      <div class="inline">${field("cs3", "Taux maximum (%)", pct(P.taux_max))}${field("cs4", "Max par bénéficiaire (%)", pct(P.plafond))}</div>
+      <div class="inline">${field("cs5", "Malus sur le reste (%)", P.malus)}${field("cs6", "Délai (heures)", P.heures)}</div>
+      <button class="btn alt" data-action="com-set" ${locked ? "disabled" : ""}>Enregistrer le barème</button>
+      ${W && !W.closed ? `<div class="inline" style="margin-top:12px"><div class="field"><label for="cd">Nouveau délai (heures à partir de maintenant)</label><input id="cd" type="number" step="any" value="1"></div></div>
+        <button class="btn alt" data-action="com-deadline">Changer le délai</button> <button class="btn alt" data-action="com-close">Clôturer maintenant</button>` : ""}
+      ${on && (!W || W.test) ? `<label class="check" style="margin-top:12px"><input type="checkbox" id="cn" checked> Prévenir les joueurs par notification (vague réelle)</label>
+        <button class="btn" data-action="com-launch">Lancer l'impôt${ev.test ? " (test)" : ""}</button>` : ""}`;
   }
 
   // ---------- Mode pirate ----------
   const Music = (() => {
-    let ctx = null, master = null, timer = null, nodes = [], step = 0, wanted = false;
+    let ctx = null, master = null, timer = null, nodes = [], step = 0, wanted = false, th = null, noise = null;
+    const theme = () => (document.body.classList.contains("communiste") ? "com" : "pirate");
     const MELODY = [110, 130.81, 123.47, 103.83, 110, 87.31, 98, 82.41];
+    // Marche originale du mode communiste (aucun air existant) : 16 croches, 0 = silence
+    const LEAD = [293.66, 0, 293.66, 369.99, 440, 0, 392, 369.99, 329.63, 0, 329.63, 392, 493.88, 0, 440, 0];
+    const BASS = [73.42, 110, 73.42, 110, 98, 146.83, 98, 146.83];
     const muted = () => { try { return localStorage.getItem("rhum_music") === "off"; } catch (e) { return false; } };
-    function tick() {
-      if (!ctx || ctx.state !== "running") return;
+    function tickPirate() {
       const t = ctx.currentTime, f = MELODY[step % MELODY.length] * (step % 16 >= 8 ? 2 : 1);
       const o = ctx.createOscillator(), g = ctx.createGain(), lp = ctx.createBiquadFilter();
       o.type = "sawtooth"; o.frequency.value = f; lp.type = "lowpass"; lp.frequency.value = 700;
       g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
       o.connect(lp); lp.connect(g); g.connect(master); o.start(t); o.stop(t + 0.75);
-      if (step % 4 === 0) {
-        const b = ctx.createOscillator(), bg = ctx.createGain();
-        b.type = "sine"; b.frequency.setValueAtTime(90, t); b.frequency.exponentialRampToValueAtTime(38, t + 0.35);
-        bg.gain.setValueAtTime(0.5, t); bg.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
-        b.connect(bg); bg.connect(master); b.start(t); b.stop(t + 0.5);
+      if (step % 4 === 0) kick(t, 90, 38, 0.5, 0.45);
+    }
+    function kick(t, f0, f1, vol, len) {
+      const b = ctx.createOscillator(), bg = ctx.createGain();
+      b.type = "sine"; b.frequency.setValueAtTime(f0, t); b.frequency.exponentialRampToValueAtTime(f1, t + len * 0.8);
+      bg.gain.setValueAtTime(vol, t); bg.gain.exponentialRampToValueAtTime(0.0001, t + len);
+      b.connect(bg); bg.connect(master); b.start(t); b.stop(t + len + 0.05);
+    }
+    function note(type, f, t, vol, len, cut) {
+      const o = ctx.createOscillator(), g = ctx.createGain(), lp = ctx.createBiquadFilter();
+      o.type = type; o.frequency.value = f; lp.type = "lowpass"; lp.frequency.value = cut;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+      o.connect(lp); lp.connect(g); g.connect(master); o.start(t); o.stop(t + len + 0.05);
+    }
+    function tickCom() {
+      const t = ctx.currentTime, k = step % 16, lead = LEAD[k];
+      if (lead) note("square", lead, t, 0.07, 0.22, 2400);
+      if (k % 2 === 0) note("triangle", BASS[(k / 2) % BASS.length], t, 0.24, 0.24, 600);
+      if (k % 4 === 0) kick(t, 120, 45, 0.55, 0.22);
+      if (k % 4 === 2 && noise) {
+        const s = ctx.createBufferSource(), g = ctx.createGain(), hp = ctx.createBiquadFilter();
+        s.buffer = noise; hp.type = "highpass"; hp.frequency.value = 1500;
+        g.gain.setValueAtTime(0.26, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+        s.connect(hp); hp.connect(g); g.connect(master); s.start(t); s.stop(t + 0.16);
       }
+    }
+    function tick() {
+      if (!ctx || ctx.state !== "running") return;
+      if (th === "com") tickCom(); else tickPirate();
       step++;
     }
     function boot() {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;
+      if (ctx && th !== theme()) teardown();
       if (!ctx) {
+        th = theme(); step = 0;
         ctx = new AC(); master = ctx.createGain(); master.gain.value = 0.55; master.connect(ctx.destination);
-        [55, 55.6].forEach((fr) => {
-          const o = ctx.createOscillator(), g = ctx.createGain(), lp = ctx.createBiquadFilter();
-          o.type = "sawtooth"; o.frequency.value = fr; lp.type = "lowpass"; lp.frequency.value = 220; g.gain.value = 0.12;
-          o.connect(lp); lp.connect(g); g.connect(master); o.start(); nodes.push(o);
-        });
+        if (th === "pirate") {
+          [55, 55.6].forEach((fr) => {
+            const o = ctx.createOscillator(), g = ctx.createGain(), lp = ctx.createBiquadFilter();
+            o.type = "sawtooth"; o.frequency.value = fr; lp.type = "lowpass"; lp.frequency.value = 220; g.gain.value = 0.12;
+            o.connect(lp); lp.connect(g); g.connect(master); o.start(); nodes.push(o);
+          });
+        } else {
+          noise = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.2), ctx.sampleRate);
+          const d = noise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+        }
       }
-      if (!timer) timer = setInterval(tick, 520);
+      if (!timer) timer = setInterval(tick, th === "com" ? 250 : 520);
       if (ctx.state === "suspended") ctx.resume().catch(() => {});
+    }
+    function teardown() {
+      if (timer) { clearInterval(timer); timer = null; }
+      if (ctx) { nodes.forEach((o) => { try { o.stop(); } catch (e) {} }); nodes = []; try { ctx.close(); } catch (e) {} ctx = null; }
+      noise = null; th = null;
     }
     function unlock() { if (wanted && ctx && ctx.state === "suspended") ctx.resume().catch(() => {}); }
     document.addEventListener("pointerdown", unlock);
     return {
       start() { wanted = true; if (muted()) return; try { boot(); } catch (e) {} },
-      stop() { wanted = false; if (timer) { clearInterval(timer); timer = null; } if (ctx) { nodes.forEach((o) => { try { o.stop(); } catch (e) {} }); nodes = []; try { ctx.close(); } catch (e) {} ctx = null; } },
+      stop() { wanted = false; teardown(); },
       toggle() { const off = !muted(); try { localStorage.setItem("rhum_music", off ? "off" : "on"); } catch (e) {} if (off) { const w = wanted; this.stop(); wanted = w; } else this.start(); return !off; },
       isOn: () => !muted()
     };
   })();
+
+  // ---------- Mode communiste ----------
+  function comLeftText(deadline) {
+    const ms = new Date(deadline) - Date.now();
+    if (ms <= 0) return "délai dépassé";
+    const m = Math.ceil(ms / 60000);
+    return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")}` : `${m} min`;
+  }
+  function comBanner() {
+    if (!isCom()) return "";
+    const c = S.com || {};
+    let msg = "Le grand partage approche. Déclare ton patrimoine dans l'onglet Patrimoine.";
+    if (c.launched && c.closed) msg = "La redistribution est terminée.";
+    else if (c.launched && c.me && c.me.status === "open") msg = `Tu dois redistribuer ${c.me.left} points avant la fin du délai (${comLeftText(c.deadline)}).`;
+    else if (c.launched) msg = "L'impôt est tombé. Regarde l'onglet Patrimoine.";
+    return `<div class="com-banner">${comFlag(40)}<div><b>Mode communiste${S.event.test ? " (test : toi seul le vois)" : ""}</b><span>${esc(msg)}</span></div>
+      <button class="pir-music" data-action="music" aria-label="Musique">${Music.isOn() ? "♪" : "♪̸"}</button></div>`;
+  }
+  function maybeShowComIntro() {
+    if (!isCom() || S.overlay || document.querySelector(".modal")) return;
+    const key = "rhum_com_intro_" + (S.event.test ? "t" : "r");
+    try { if (localStorage.getItem(key)) return; } catch (e) {}
+    const m = document.createElement("div");
+    m.className = "modal com-modal"; m.setAttribute("role", "dialog");
+    m.innerHTML = `<div class="modal-in com-intro">${comFlag(84)}<h2>Camarades !</h2>
+      <p>Le grand partage approche. Dans l'onglet <b>Patrimoine</b>, chacun déclare ses points.</p>
+      <p>Les plus riches seront taxés sur <b>tout</b> leur patrimoine. Ils devront redistribuer leur impôt aux joueurs sous le seuil, avant la fin du délai. Sinon, l'impôt part d'office aux trois plus pauvres, avec un malus.</p>
+      <button class="btn" id="ci-go">En avant, camarades !</button></div>`;
+    document.body.appendChild(m);
+    m.querySelector("#ci-go").addEventListener("click", () => {
+      try { localStorage.setItem(key, "1"); } catch (e) {}
+      m.remove(); Music.start(); S.tab = "patrimoine"; render(); window.scrollTo(0, 0);
+    });
+  }
+  function patrimoineHTML() {
+    const head = "<h1>Patrimoine</h1>";
+    if (!isCom()) return `${head}<p class="empty">Le mode communiste n'est pas actif.</p>`;
+    const c = S.com;
+    if (!c || !c.active) return `${head}<p class="empty">Le mode communiste n'est pas encore installé (lance 11_communiste.sql dans Supabase).</p>`;
+    const me = c.me, thr = Math.round(c.threshold);
+    let status = "";
+    if (!c.launched) {
+      status = `<div class="panel"><h2 style="margin-top:0">Déclaration de patrimoine</h2><p>Le seuil de richesse est la moyenne des points : <b>${thr} points</b>. L'impôt n'est pas encore tombé. Les plus riches seront taxés sur tout leur patrimoine, et plus ils sont riches, plus le taux est élevé.</p></div>`;
+    } else if (me && me.status === "open" && !c.closed) {
+      const cands = (c.candidates || []).map((k) => {
+        const pl = playerById(k.id) || { avatar: {} };
+        const room = Math.max(0, Math.min(me.left, me.cap - k.given));
+        return `<div class="com-cand">${window.RhumAvatar.render(pl.avatar, 44)}<div class="grow"><b>${esc(k.name)}</b><small>${k.points} points${k.given ? ` · déjà ${k.given} reçus de toi` : ""}</small></div>
+          <input type="number" inputmode="numeric" id="cg${k.id}" min="1" max="${room}" value="${room}" aria-label="Points pour ${esc(k.name)}" ${room ? "" : "disabled"}>
+          <button class="btn small" data-action="com-give" data-id="${k.id}" ${room ? "" : "disabled"}>Donner</button></div>`;
+      }).join("");
+      status = `<div class="panel com-due"><h2 style="margin-top:0">Tu dois ${me.left} points</h2>
+        <p>Impôt de ${Math.round(me.rate * 100)} % sur tes ${me.snap} points : <b>${me.tax} points</b>${me.given ? `, dont ${me.given} déjà redistribués` : ""}. Choisis à qui donner. Maximum ${me.cap} points par joueur.</p>
+        <p class="com-warn">Il te reste ${comLeftText(c.deadline)}. Passé le délai, le reste va d'office aux trois plus pauvres et tu perds ${Math.round(c.malus_pct)} % du reste en malus.</p>${cands || '<p class="empty">Personne à aider.</p>'}</div>`;
+    } else if (me && me.status === "done") {
+      status = `<div class="panel"><h2 style="margin-top:0">Merci, camarade</h2><p>Tu as redistribué tout ton impôt (${me.tax} points).</p></div>`;
+    } else if (me && me.status === "auto") {
+      status = `<div class="panel"><h2 style="margin-top:0">Redistribué d'office</h2><p>Tu n'avais pas tout redistribué à temps. Le reste est parti aux plus pauvres${me.malus ? `, et tu as perdu ${me.malus} points de malus` : ""}.</p></div>`;
+    } else {
+      status = `<div class="panel"><h2 style="margin-top:0">Tu n'es pas taxé</h2><p>Tu es sous le seuil de ${thr} points.${c.closed ? "" : ` Les riches ont encore ${comLeftText(c.deadline)} pour redistribuer.`}</p></div>`;
+    }
+    const rec = (c.received || []);
+    const recHTML = rec.length ? `<div class="panel"><h2 style="margin-top:0">Ce que tu as reçu</h2>${rec.map((r) => `<div class="com-line">+${r.amount} de ${esc(r.from)}${r.auto ? " (d'office)" : ""}</div>`).join("")}</div>` : "";
+    const rows = (c.players || []).map((p, i) => {
+      const pl = playerById(p.id) || { avatar: {} };
+      return `<li class="row ${S.me && p.id === S.me.id ? "me" : ""}"><span class="rank">${i + 1}</span>${window.RhumAvatar.render(pl.avatar, 44)}
+        <div><div class="row-name">${esc(p.name)}</div><div class="row-det">${p.cards} ${plural(p.cards, "carte", "cartes")}${c.launched && p.tax ? ` · impôt ${p.tax} (${Math.round(p.rate * 100)} %)` : ""}${p.points < c.threshold ? " · sous le seuil" : ""}</div></div>
+        <span class="row-total">${p.points}</span></li>`;
+    }).join("");
+    const gifts = (c.gifts || []).slice(0, 40);
+    const giftHTML = gifts.length ? `<h2>Qui a donné à qui</h2><div class="panel">${gifts.map((g) => `<div class="com-line">${esc(g.from)} → ${esc(g.to)} : ${g.amount}${g.auto ? " (d'office)" : ""}</div>`).join("")}</div>` : "";
+    return `${head}${status}${recHTML}<h2>Déclaration de patrimoine</h2><p class="lede">Seuil de richesse : ${thr} points.</p><ol class="board">${rows}</ol>${giftHTML}`;
+  }
 
   function pirateBanner() {
     if (!isPirate()) return "";
@@ -927,6 +1105,7 @@
   }
   function maybeShowLetter() {
     if (isPirate() && S.letter && !S.letter.seen && !S.overlay && !S.boosters.length) showLetterModal();
+    maybeShowComIntro();
   }
 
   function recapHTML(r) {
@@ -993,11 +1172,13 @@
   // ---------- Rendu principal ----------
   function render() {
     document.body.classList.toggle("pirate", isPirate());
-    if (!isPirate()) Music.stop();
+    document.body.classList.toggle("communiste", isCom());
+    if (!isPirate() && !isCom()) Music.stop();
     if (!S.me) return renderPicker();
     let inner;
     switch (S.tab) {
       case "pillage": inner = pillageHTML(); break;
+      case "patrimoine": inner = patrimoineHTML(); break;
       case "quiz": inner = quizHTML(); break;
       case "boosters": inner = boostersHTML(); break;
       case "score": inner = scoreHTML(); break;
@@ -1102,18 +1283,29 @@
       S.tab = "album"; await doStreak(); await refresh(true); maybeInvite();
     },
     switch() { S.me = null; S.event = { mode: null }; S.letter = null; S.recap = []; Music.stop(); try { localStorage.removeItem("rhum_player"); localStorage.removeItem("rhum_pin"); } catch (e) {} S.run = null; render(); },
-    async tab(el) { S.tab = el.dataset.tab; S.run = null; render(); window.scrollTo(0, 0); if (S.tab === "marche" || S.tab === "pillage") { try { await loadMarket(); if (S.tab === "marche" || S.tab === "pillage") render(); } catch (e) {} } },
+    async tab(el) { S.tab = el.dataset.tab; S.run = null; render(); window.scrollTo(0, 0); if (S.tab === "patrimoine") { await loadCom(); render(); Music.start(); }
+      if (S.tab === "marche" || S.tab === "pillage") { try { await loadMarket(); if (S.tab === "marche" || S.tab === "pillage") render(); } catch (e) {} } },
     filter(el) { S.filters[el.dataset.key] = el.dataset.val; render(); },
     "toggle-missing"() { S.filters.missing = !S.filters.missing; render(); },
     "show-letter"() { document.querySelectorAll(".letter-modal").forEach((x) => x.remove()); showLetterModal(); },
     music() { Music.toggle(); render(); },
+    async "com-give"(el) {
+      const id = Number(el.dataset.id), inp = document.getElementById("cg" + id), v = Math.floor(Number(inp && inp.value));
+      if (!(v >= 1)) return toast("Indique un nombre de points.", true);
+      el.disabled = true;
+      try {
+        const r = await rpc("com_give", { p_player: S.me.id, p_to: id, p_amount: v });
+        if (r && r.error) toast(r.error, true); else toast("Don enregistré. Merci, camarade !");
+      } catch (e) { toast(e.message, true); }
+      await refresh();
+    },
     async "pil-enter"() {
       const pin = (document.getElementById("pilpin") || {}).value || "";
       if (!/^\d{4}$/.test(pin)) return toast("Le code doit faire 4 chiffres", true);
       const r = await rpc("pirate_enter", { p_thief: S.me.id, p_victim: S.letter.target, p_pin: pin });
       if (r && r.error) return toast(r.error, true);
       S.pil = { step: "deck", info: r, picked: [], taken: null };
-      setTimeout(pingAlerts, (r.test ? 65 : 305) * 1000);
+      setTimeout(() => pingAlerts(true), (r.test ? 65 : 305) * 1000);
       try { await loadMarket(); } catch (e) {}
       render(); window.scrollTo(0, 0);
     },
@@ -1207,6 +1399,7 @@
     async "claim-flash"(el) {
       try {
         const cid = await rpc("claim_flash", { p_player: S.me.id, p_flash: Number(el.dataset.id) });
+        appPush({ flash_id: Number(el.dataset.id) });
         await load();
         await showDrawn([cid], "Légendaire éclair", 0);
       } catch (e) { toast(e.message, true); await refresh(); }
@@ -1239,7 +1432,11 @@
     async "make-drop"() {
       try {
         await rpc("admin_create_drop", { p_code: S.adminCode, p_label: document.getElementById("dl").value || "Drop", p_size: Number(document.getElementById("ds").value), p_minutes: Number(document.getElementById("dm").value), p_luck: Number(document.getElementById("dluck").value) });
-        toast("Drop lâché. Prévenez le groupe."); await refresh();
+        let msg = "";
+        if (document.getElementById("dn") && document.getElementById("dn").checked) {
+          msg = (await notify("Drop surprise", `Le dieu des cartes a lâché un drop surprise : ${document.getElementById("dl").value || "Drop"}. Vite, il ne dure que ${Number(document.getElementById("dm").value)} minutes !`, true)) || "";
+        }
+        toast("Drop lâché. " + msg); await refresh();
       } catch (e) { toast(e.message, true); }
     },
     async "give-booster"() {
@@ -1277,8 +1474,40 @@
     async "set-event"() {
       const mode = document.getElementById("evm").value, tp = document.getElementById("evt").value, un = document.getElementById("evu").value;
       await rpc("admin_set_event", { p_code: S.adminCode, p_mode: mode, p_until: un ? new Date(un).toISOString() : null, p_test_player: tp ? Number(tp) : null });
-      toast(mode ? (tp ? "Mode pirate lancé en test." : "Mode pirate lancé pour tout le monde !") : "Mode arrêté.");
+      let msg = "";
+      const nm = mode === "communiste" ? "communiste" : "pirate";
+      if (mode && !tp && document.getElementById("evn") && document.getElementById("evn").checked) {
+        msg = (mode === "pirate"
+          ? await notify("Mode pirate", "Les pirates sont à l'abordage ! Ouvre l'album : une lettre t'attend.", true)
+          : await notify("Mode communiste", "Camarades, le grand partage approche. Ouvre l'album et déclare ton patrimoine.", true)) || "";
+      }
+      toast((mode ? (tp ? `Mode ${nm} lancé en test.` : `Mode ${nm} lancé pour tout le monde !`) : "Mode arrêté.") + (msg ? " " + msg : ""));
       await loadAdmin(); await loadEvent(); render();
+    },
+    "admin-sec"(el) { S.admin.sec = el.dataset.sec; render(); window.scrollTo(0, 0); },
+    async "com-set"() {
+      try { await saveComParams(); toast("Barème enregistré."); await loadAdmin(); render(); } catch (e) { toast(e.message, true); }
+    },
+    async "com-launch"() {
+      const ev = (S.admin.pirate && S.admin.pirate.event) || {}, test = !!ev.test;
+      if (!test && !window.confirm("Lancer la vague d'impôt RÉELLE ? Il n'y en aura qu'une, et les points seront retirés tout de suite.")) return;
+      try {
+        await saveComParams();
+        const r = await rpc("admin_com_launch", { p_code: S.adminCode });
+        let msg = "";
+        if (!r.test && document.getElementById("cn") && document.getElementById("cn").checked) {
+          msg = (await notify("L'impôt est tombé", "Les plus riches ont " + (S.admin.com ? S.admin.com.params.heures : 6) + " h pour redistribuer. Ouvre l'onglet Patrimoine.", true)) || "";
+        }
+        toast(`Impôt ${r.test ? "de test " : ""}lancé : ${r.pool} points à redistribuer.` + (msg ? " " + msg : ""));
+        await loadAdmin(); await loadEvent(); render();
+      } catch (e) { toast(e.message, true); }
+    },
+    async "com-close"() {
+      if (!window.confirm("Clôturer maintenant ? Ce qui n'est pas redistribué part d'office aux 3 plus pauvres, avec le malus.")) return;
+      try { await rpc("admin_com_close", { p_code: S.adminCode }); toast("Vague clôturée."); await refresh(); await loadAdmin(); render(); } catch (e) { toast(e.message, true); }
+    },
+    async "com-deadline"() {
+      try { await rpc("admin_com_deadline", { p_code: S.adminCode, p_heures: Number(document.getElementById("cd").value) }); toast("Délai modifié."); await loadAdmin(); render(); } catch (e) { toast(e.message, true); }
     },
     async "copy-quiz"() {
       const t = document.getElementById("qtout");
@@ -1292,7 +1521,14 @@
     }
   };
 
+  async function saveComParams() {
+    const g = (id) => Number((document.getElementById(id) || {}).value);
+    if (!document.getElementById("cs1") || (S.admin.com && S.admin.com.wave && !S.admin.com.wave.test)) return;
+    await rpc("admin_com_set", { p_code: S.adminCode, p_seuil: g("cs1"), p_pente: g("cs2") / 100, p_taux_max: g("cs3") / 100, p_plafond: g("cs4") / 100, p_malus: g("cs5"), p_heures: g("cs6") });
+  }
   async function loadAdmin() {
+    try { S.admin.com = await rpc("admin_com_overview", { p_code: S.adminCode }); } catch (e) { S.admin.com = null; }
+    try { S.admin.status = await rpc("admin_status", { p_code: S.adminCode }); } catch (e) { S.admin.status = null; }
     try { S.adminData = { fetish: await rpc("admin_fetish_list", { p_code: S.adminCode }) }; } catch (e) { S.adminData = { fetish: [] }; }
     try { S.admin.levels = await rpc("admin_levels", { p_code: S.adminCode }); } catch (e) { S.admin.levels = []; }
     try { S.admin.hist = await rpc("admin_player_cards", { p_code: S.adminCode }); } catch (e) { S.admin.hist = []; }
@@ -1445,6 +1681,7 @@
     if (S.me) maybeInvite();
     setInterval(() => {
       if (document.hidden || S.overlay || S.run || !S.me || S.tab === "admin") return;
+      if (S.tab === "patrimoine" && S.com && S.com.me && S.com.me.status === "open") return;
       refresh();
     }, 45000);
     setInterval(async () => {

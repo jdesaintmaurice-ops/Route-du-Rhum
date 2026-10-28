@@ -463,3 +463,32 @@ body.pirate .tab { font-size: 12px; }
 .pil-count { margin: 8px 0; font-weight: 700; color: var(--flag-yellow); }
 .mk-cell.sel .card { outline: 3px solid var(--flag-red); outline-offset: 2px; }
 .mk-cell.sel small { color: var(--flag-red); font-weight: 700; }
+
+/* ---------- Mode communiste ---------- */
+body.communiste {
+  --sea-950: #1c0205; --sea-900: #2a050a; --sea-800: #3a0a11; --sea-700: #6a1822; --sea-600: #a3202c;
+  --ink: #FFF1E2; --ink-soft: #EFC9B4; --ink-faint: #C99A86;
+  --flag-red: #F0323A; --flag-yellow: #FFD21F; --flag-blue: #F2A58E; --flag-white: #FFF1E2;
+  --avatar-bg: #6a1822;
+}
+body.communiste .tabbar-in { grid-template-columns: repeat(6, 1fr); }
+body.communiste .tab { font-size: 12px; }
+.com-banner { display: flex; align-items: center; gap: 12px; margin: 0 0 14px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--flag-yellow); background: #4a0910; }
+.com-banner > div { flex: 1; min-width: 0; }
+.com-banner b { display: block; font: 800 18px/1.1 var(--display); letter-spacing: .04em; color: var(--flag-yellow); text-transform: uppercase; }
+.com-banner span { color: var(--ink-soft); font-size: 14px; }
+.com-modal .modal-in.com-intro { background: #4a0910; border: 2px solid var(--flag-yellow); border-radius: 16px; padding: 20px 16px; display: flex; flex-direction: column; gap: 10px; align-items: center; text-align: center; }
+.com-intro h2 { font: 800 30px/1 var(--display); text-transform: uppercase; letter-spacing: .05em; color: var(--flag-yellow); margin: 0; }
+.com-due { border-color: var(--flag-yellow); }
+.com-warn { color: var(--flag-yellow); font-weight: 600; margin: 8px 0 12px; }
+.com-cand { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--sea-700); }
+.com-cand .grow { flex: 1; min-width: 0; }
+.com-cand small { display: block; color: var(--ink-soft); font-size: 13px; }
+.com-cand input { width: 72px; padding: 8px; border-radius: 8px; border: 1px solid var(--sea-700); background: var(--sea-900); color: var(--ink); font: 700 16px var(--body); text-align: center; }
+.com-line { padding: 4px 0; font-size: 15px; }
+.adm-bar { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 12px; padding: 8px 12px; background: var(--sea-800); border: 1px solid var(--sea-700); border-radius: 10px; font-size: 14px; color: var(--ink-soft); }
+.adm-bar b { color: var(--ink); margin-right: 4px; }
+.com-adm-scroll { overflow-x: auto; margin: 8px 0; }
+.com-tab { width: 100%; border-collapse: collapse; font-size: 14px; }
+.com-tab th, .com-tab td { text-align: left; padding: 5px 8px 5px 0; border-bottom: 1px solid var(--sea-700); white-space: nowrap; }
+.com-tab th { color: var(--ink-soft); font-weight: 600; }
