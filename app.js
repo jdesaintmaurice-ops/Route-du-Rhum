@@ -1005,10 +1005,10 @@
   function comBanner() {
     if (!isCom()) return "";
     const c = S.com || {};
-    let msg = "Le grand partage approche. Déclare ton patrimoine dans l'onglet Patrimoine.";
+    let msg = "L'impôt arrive. Regarde l'onglet Patrimoine.";
     if (c.launched && c.closed) msg = "La redistribution est terminée.";
-    else if (c.launched && c.me && c.me.status === "open") msg = `Tu dois redistribuer ${c.me.left} points avant la fin du délai (${comLeftText(c.deadline)}).`;
-    else if (c.launched) msg = "L'impôt est tombé. Regarde l'onglet Patrimoine.";
+    else if (c.launched && c.me && c.me.status === "open") msg = `Tu as ${c.me.left} points à redistribuer. Il te reste ${comLeftText(c.deadline)}.`;
+    else if (c.launched) msg = "Les riches redistribuent leurs points. Regarde l'onglet Patrimoine.";
     return `<div class="com-banner">${comFlag(40)}<div><b>Mode communiste${S.event.test ? " (test : toi seul le vois)" : ""}</b><span>${esc(msg)}</span></div>
       <button class="pir-music" data-action="music" aria-label="Musique">${Music.isOn() ? "♪" : "♪̸"}</button></div>`;
   }
@@ -1019,8 +1019,9 @@
     const m = document.createElement("div");
     m.className = "modal com-modal"; m.setAttribute("role", "dialog");
     m.innerHTML = `<div class="modal-in com-intro">${comFlag(84)}<h2>Camarades !</h2>
-      <p>Le grand partage approche. Dans l'onglet <b>Patrimoine</b>, chacun déclare ses points.</p>
-      <p>Les plus riches seront taxés sur <b>tout</b> leur patrimoine. Ils devront redistribuer leur impôt aux joueurs sous le seuil, avant la fin du délai. Sinon, l'impôt part d'office aux trois plus pauvres, avec un malus.</p>
+      <p>Les plus riches doivent partager leurs points avec les plus pauvres.</p>
+      <p>Si tu es riche, tu as quelques heures pour choisir à qui donner. Sinon, c'est fait à ta place, avec une pénalité.</p>
+      <p>Tout se passe dans l'onglet <b>Patrimoine</b>.</p>
       <button class="btn" id="ci-go">En avant, camarades !</button></div>`;
     document.body.appendChild(m);
     m.querySelector("#ci-go").addEventListener("click", () => {
@@ -1036,7 +1037,7 @@
     const me = c.me, thr = Math.round(c.threshold);
     let status = "";
     if (!c.launched) {
-      status = `<div class="panel"><h2 style="margin-top:0">Déclaration de patrimoine</h2><p>Le seuil de richesse est la moyenne des points : <b>${thr} points</b>. L'impôt n'est pas encore tombé. Les plus riches seront taxés sur tout leur patrimoine, et plus ils sont riches, plus le taux est élevé.</p></div>`;
+      status = `<div class="panel"><h2 style="margin-top:0">Le partage arrive</h2><p>Les plus riches vont bientôt devoir donner une partie de leurs points. Reviens dans un instant.</p></div>`;
     } else if (me && me.status === "open" && !c.closed) {
       const cands = (c.candidates || []).map((k) => {
         const pl = playerById(k.id) || { avatar: {} };
@@ -1045,27 +1046,27 @@
           <input type="number" inputmode="numeric" id="cg${k.id}" min="1" max="${room}" value="${room}" aria-label="Points pour ${esc(k.name)}" ${room ? "" : "disabled"}>
           <button class="btn small" data-action="com-give" data-id="${k.id}" ${room ? "" : "disabled"}>Donner</button></div>`;
       }).join("");
-      status = `<div class="panel com-due"><h2 style="margin-top:0">Tu dois ${me.left} points</h2>
-        <p>Impôt de ${Math.round(me.rate * 100)} % sur tes ${me.snap} points : <b>${me.tax} points</b>${me.given ? `, dont ${me.given} déjà redistribués` : ""}. Choisis à qui donner. Maximum ${me.cap} points par joueur.</p>
-        <p class="com-warn">Il te reste ${comLeftText(c.deadline)}. Passé le délai, le reste va d'office aux trois plus pauvres et tu perds ${Math.round(c.malus_pct)} % du reste en malus.</p>${cands || '<p class="empty">Personne à aider.</p>'}</div>`;
+      status = `<div class="panel com-due"><h2 style="margin-top:0">Tu as ${me.left} points à redistribuer</h2>
+        <p>Choisis à qui les donner (maximum ${me.cap} points par joueur).</p>
+        <p class="com-warn">Il te reste ${comLeftText(c.deadline)}. Ensuite, ce qui reste est donné d'office aux plus pauvres et tu perds ${Math.round(c.malus_pct)} % de ce reste.</p>${cands || '<p class="empty">Personne à aider.</p>'}</div>`;
     } else if (me && me.status === "done") {
-      status = `<div class="panel"><h2 style="margin-top:0">Merci, camarade</h2><p>Tu as redistribué tout ton impôt (${me.tax} points).</p></div>`;
+      status = `<div class="panel"><h2 style="margin-top:0">Merci, camarade</h2><p>Tu as tout redistribué (${me.tax} points).</p></div>`;
     } else if (me && me.status === "auto") {
-      status = `<div class="panel"><h2 style="margin-top:0">Redistribué d'office</h2><p>Tu n'avais pas tout redistribué à temps. Le reste est parti aux plus pauvres${me.malus ? `, et tu as perdu ${me.malus} points de malus` : ""}.</p></div>`;
+      status = `<div class="panel"><h2 style="margin-top:0">Délai dépassé</h2><p>Le reste a été donné d'office aux plus pauvres${me.malus ? `, et tu as perdu ${me.malus} points de pénalité` : ""}.</p></div>`;
     } else {
-      status = `<div class="panel"><h2 style="margin-top:0">Tu n'es pas taxé</h2><p>Tu es sous le seuil de ${thr} points.${c.closed ? "" : ` Les riches ont encore ${comLeftText(c.deadline)} pour redistribuer.`}</p></div>`;
+      status = `<div class="panel"><h2 style="margin-top:0">Rien à donner</h2><p>${c.closed ? "Le partage est terminé." : `Les riches ont encore ${comLeftText(c.deadline)} pour te donner des points.`}</p></div>`;
     }
     const rec = (c.received || []);
     const recHTML = rec.length ? `<div class="panel"><h2 style="margin-top:0">Ce que tu as reçu</h2>${rec.map((r) => `<div class="com-line">+${r.amount} de ${esc(r.from)}${r.auto ? " (d'office)" : ""}</div>`).join("")}</div>` : "";
     const rows = (c.players || []).map((p, i) => {
       const pl = playerById(p.id) || { avatar: {} };
       return `<li class="row ${S.me && p.id === S.me.id ? "me" : ""}"><span class="rank">${i + 1}</span>${window.RhumAvatar.render(pl.avatar, 44)}
-        <div><div class="row-name">${esc(p.name)}</div><div class="row-det">${p.cards} ${plural(p.cards, "carte", "cartes")}${c.launched && p.tax ? ` · impôt ${p.tax} (${Math.round(p.rate * 100)} %)` : ""}${p.points < c.threshold ? " · sous le seuil" : ""}</div></div>
+        <div><div class="row-name">${esc(p.name)}</div><div class="row-det">${p.cards} ${plural(p.cards, "carte", "cartes")}${c.launched && p.tax ? ` · à donner : ${p.tax}` : ""}</div></div>
         <span class="row-total">${p.points}</span></li>`;
     }).join("");
     const gifts = (c.gifts || []).slice(0, 40);
     const giftHTML = gifts.length ? `<h2>Qui a donné à qui</h2><div class="panel">${gifts.map((g) => `<div class="com-line">${esc(g.from)} → ${esc(g.to)} : ${g.amount}${g.auto ? " (d'office)" : ""}</div>`).join("")}</div>` : "";
-    return `${head}${status}${recHTML}<h2>Déclaration de patrimoine</h2><p class="lede">Seuil de richesse : ${thr} points.</p><ol class="board">${rows}</ol>${giftHTML}`;
+    return `${head}${status}${recHTML}<h2>Les points de chacun</h2><ol class="board">${rows}</ol>${giftHTML}`;
   }
 
   function pirateBanner() {
@@ -1081,11 +1082,11 @@
     return `<div class="letter-in">${jollyRoger(72)}
       <h2>Lettre du pirate</h2>
       ${S.event.test ? '<p class="pir-test">TEST : toi seul vois ceci.</p>' : ""}
-      <p>Mille sabords ! Cette nuit, tu n'es plus un gentil collectionneur. Voici le code secret de <b>${esc(L.name)}</b> :</p>
+      <p>Mille sabords ! Tu es devenu pirate. Voici le code secret de <b>${esc(L.name)}</b> :</p>
       <div class="letter-code" aria-label="Code de ${esc(L.name)}">${digits}</div>
       ${L.changed ? `<p class="pir-test">${esc(L.name)} a changé son code : ton ancien code ne marche plus.</p>` : ""}
       ${L.pin ? "" : `<p class="pir-test">${esc(L.name)} n'a pas encore choisi de code : repasse plus tard.</p>`}
-      <p>Va voler les cartes que tu souhaites : onglet <b>Pillage</b>. Moins tu as de cartes, plus tu peux en prendre.</p>
+      <p>Va piller quelques-unes de ses cartes dans l'onglet <b>Pillage</b>.</p>
       <p class="muted" style="font-size:13px">Il sera prévenu 5 minutes plus tard, et pourra changer son code.</p></div>`;
   }
   async function markLetterSeen() {
@@ -1163,7 +1164,7 @@
     const picked = new Set(P.picked);
     const grid = list.map((c) => `<div class="mk-cell${picked.has(c.id) ? " sel" : ""}">${cardHTML(c, { action: "pil-pick", count: deck.get(c.id) })}<small>${picked.has(c.id) ? "Dans ton sac" : " "}</small></div>`).join("");
     return `${head}<div class="panel"><div class="pil-target">${vAv}<div><h2>Chez ${esc(L.name)}</h2>
-        <p>Tu peux voler <b>${info.quota || 1}</b> ${(info.quota || 1) > 1 ? "cartes" : "carte"}${info.legend_cap ? ", dont une seule légendaire" : ""}. Plus tu as peu de cartes, plus tu en prends.</p></div></div>
+        <p>Tu peux piller <b>${info.quota || 1}</b> ${(info.quota || 1) > 1 ? "cartes" : "carte"}${info.legend_cap ? " (une seule légendaire)" : ""}.</p></div></div>
       <p class="pil-count">${P.picked.length} / ${info.quota || 1} dans ton sac</p>
       <button class="btn" data-action="pil-steal" ${P.picked.length ? "" : "disabled"}>Voler ces cartes</button></div>
       <div class="mk-grid">${grid || '<p class="empty">Ce deck est vide.</p>'}</div>`;
@@ -1479,7 +1480,7 @@
       if (mode && !tp && document.getElementById("evn") && document.getElementById("evn").checked) {
         msg = (mode === "pirate"
           ? await notify("Mode pirate", "Les pirates sont à l'abordage ! Ouvre l'album : une lettre t'attend.", true)
-          : await notify("Mode communiste", "Camarades, le grand partage approche. Ouvre l'album et déclare ton patrimoine.", true)) || "";
+          : await notify("Mode communiste", "Camarades, les riches doivent partager leurs points. Ouvre l'album.", true)) || "";
       }
       toast((mode ? (tp ? `Mode ${nm} lancé en test.` : `Mode ${nm} lancé pour tout le monde !`) : "Mode arrêté.") + (msg ? " " + msg : ""));
       await loadAdmin(); await loadEvent(); render();
