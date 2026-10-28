@@ -235,7 +235,8 @@
     filters: { cls: "all", rar: "all", missing: false },
     run: null, overlay: false, adminCode: null, adminData: null,
     flash: [], myLevel: 3, hardSubs: [], streak: null, admin: { levels: [] },
-    mk: { view: "search", playerId: null, q: "", decks: [], trades: [], perks: { leger: [], costaud: [] }, loaded: false }
+    mk: { view: "search", playerId: null, q: "", decks: [], trades: [], loaded: false },
+    event: { mode: null, test: false }, letter: null, recap: [], pil: { step: "code", info: null, picked: [], taken: null }
   };
 
   // ---------- Utilitaires ----------
@@ -294,27 +295,60 @@
       try { S.myLevel = Number(await rpc("my_level", { p_player: me.id })) || 3; } catch (e) { S.myLevel = 3; }
     }
     try { await loadFlash(); } catch (e) { S.flash = []; }
+    await loadEvent();
     try {
       const hardIds = quizzes.filter((z) => z.kind === "hard").map((z) => z.id);
       S.hardSubs = hardIds.length ? await q(sb.from("quiz_submissions").select("quiz_id, player_id, score").in("quiz_id", hardIds)) : [];
     } catch (e) { S.hardSubs = []; }
   }
 
+  // Mode événement (pirate) : état, lettre, alertes de vol
+  async function loadEvent() {
+    if (!S.me) { S.event = { mode: null }; S.letter = null; S.recap = []; return; }
+    try { S.event = (await rpc("event_state", { p_player: S.me.id })) || { mode: null }; } catch (e) { S.event = { mode: null }; }
+    S.letter = null;
+    if (S.event.mode === "pirate") {
+      pingAlerts();
+      try { S.letter = await rpc("pirate_letter", { p_player: S.me.id }); } catch (e) { S.letter = null; }
+    }
+    try { S.recap = (await rpc("pirate_recap", { p_player: S.me.id })) || []; } catch (e) { S.recap = []; }
+  }
+  // Alertes automatiques (échanges, vols) : la fonction send-push vérifie tout dans la base avant d'envoyer
+  function appPush(payload) {
+    try {
+      fetch(CFG.SUPABASE_URL.replace(/\/$/, "") + "/functions/v1/send-push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: CFG.SUPABASE_ANON_KEY, Authorization: "Bearer " + CFG.SUPABASE_ANON_KEY },
+        body: JSON.stringify(payload)
+      }).catch(() => {});
+    } catch (e) {}
+  }
+  const pingAlerts = () => appPush({ check_raids: true });
+  const isPirate = () => !!(S.me && S.event && S.event.mode === "pirate");
+
   async function loadFlash() {
     S.flash = await q(S.sb.from("flash_drops").select("*").order("id", { ascending: false }).limit(6));
   }
 
   async function loadMarket() {
-    const [decks, perks, trades] = await Promise.all([
-      rpc("market_decks", {}), rpc("market_perks", {}),
+    const [decks, trades] = await Promise.all([
+      rpc("market_decks", {}),
       q(S.sb.from("trades").select("*").order("id", { ascending: false }).limit(300))
     ]);
-    S.mk.decks = decks; S.mk.perks = (perks && perks.leger) ? perks : { leger: [], costaud: [] }; S.mk.trades = trades; S.mk.loaded = true;
+    S.mk.decks = decks; S.mk.trades = trades; S.mk.loaded = true;
   }
 
   // ---------- Dessins ----------
+  function jollyRoger(w) {
+    return `<svg class="jolly" viewBox="0 0 64 44" width="${w || 40}" aria-hidden="true"><rect width="64" height="44" rx="3" fill="#050505" stroke="#EDE6D8" stroke-width="1.5"/><path d="M14 30 L50 40 M50 30 L14 40" stroke="#EDE6D8" stroke-width="3" stroke-linecap="round"/><circle cx="32" cy="17" r="10" fill="#EDE6D8"/><rect x="27" y="24" width="10" height="6" rx="1.5" fill="#EDE6D8"/><circle cx="28" cy="16" r="2.6" fill="#050505"/><circle cx="36" cy="16" r="2.6" fill="#050505"/><path d="M32 19 l-1.6 3.4 h3.2z" fill="#050505"/></svg>`;
+  }
   function pennants() {
     let p = "";
+    if (isPirate()) {
+      const cols = ["#B3162B", "#050505", "#EDE6D8", "#050505"];
+      for (let i = 0; i < 24; i++) p += `<polygon points="${i * 10},0 ${i * 10 + 10},0 ${i * 10 + 5},9" fill="${cols[i % 4]}"/>`;
+      return `<svg class="pennants" viewBox="0 0 240 9" preserveAspectRatio="none" aria-hidden="true">${p}</svg>`;
+    }
     for (let i = 0; i < 24; i++) p += `<polygon points="${i * 10},0 ${i * 10 + 10},0 ${i * 10 + 5},9" fill="${FLAGS[i % 4]}"/>`;
     return `<svg class="pennants" viewBox="0 0 240 9" preserveAspectRatio="none" aria-hidden="true">${p}</svg>`;
   }
@@ -393,14 +427,15 @@
     const pending = S.boosters.length + availableDrops().length + S.daily.filter((d) => d.state === "ready").length;
     const todo = openQuizzes().length;
     const tabs = [["marche", "Village"], ["album", "Album"], ["quiz", "Quiz"], ["boosters", "Boosters"], ["score", "Score"]];
+    if (isPirate()) tabs.splice(1, 0, ["pillage", "Pillage"]);
     const incoming = S.mk.trades.filter((t) => t.to_player === S.me.id && t.status === "pending").length;
-    const badge = { quiz: todo, boosters: pending, marche: incoming };
+    const badge = { quiz: todo, boosters: pending, marche: incoming, pillage: (isPirate() && S.letter && !S.letter.done) ? 1 : 0 };
     try { if (navigator.setAppBadge) navigator.setAppBadge(todo + pending + incoming); } catch (e) {}
     app.innerHTML = `<header class="top"><div class="top-row">
         <button class="top-who" data-action="switch" aria-label="Changer de joueur">${window.RhumAvatar.render(S.me.avatar, 44)}
           <span><span class="top-name">${esc(S.me.first_name)}</span><br><span class="top-sub">Changer de joueur</span></span></button>
         <div class="top-score"><b>${myScore().total}</b><span>points</span></div></div>${pennants()}</header>
-      <main id="view" class="view">${flashBanner()}${inner}</main>
+      <main id="view" class="view">${pirateBanner()}${flashBanner()}${inner}</main>
       <nav class="tabbar" aria-label="Navigation"><div class="tabbar-in">${tabs.map(([k, l]) => `<button class="tab" data-action="tab" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ""}>${l}${badge[k] ? `<span class="dot" aria-label="${badge[k]} à faire">${badge[k]}</span>` : ""}</button>`).join("")}</div></nav>`;
   }
 
@@ -422,7 +457,7 @@
   }
   function marketBanner() {
     const incoming = S.mk.trades.filter((t) => t.to_player === S.me.id && t.status === "pending").length;
-    return `<button class="mk-banner" data-action="tab" data-tab="marche"><b>Village</b><span>${incoming ? `${incoming} ${plural(incoming, "demande", "demandes")} pour toi` : "Deal tes cartes contre une autre carte ou une action"}</span></button>`;
+    return `<button class="mk-banner" data-action="tab" data-tab="marche"><b>Village</b><span>${incoming ? `${incoming} ${plural(incoming, "demande", "demandes")} pour toi` : "Échange tes cartes contre celles des autres"}</span></button>`;
   }
 
   // --- Album ---
@@ -601,8 +636,6 @@
     if (!c) return "carte retirée";
     return `<span class="mk-card r-${c.rarity}"><b>${esc(c.name)}</b> <small>${c.kind === "skipper" ? "skipper" : "bateau"} · ${"★".repeat(STARS[c.rarity] || 1)}</small></span>`;
   }
-  const tierOf = (c) => (c && c.rarity === "legendaire" ? "costaud" : c && c.rarity === "epique" ? "leger" : null);
-  const TIER_LABEL = { leger: "Léger", costaud: "Costaud" };
   const norm = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   function deckOf(pid) {
     const m = new Map();
@@ -639,7 +672,7 @@
     const deck = deckOf(p.id);
     const list = S.cards.filter((c) => deck.has(c.id)).sort((x, y) => RAR.indexOf(x.rarity) - RAR.indexOf(y.rarity) || x.name.localeCompare(y.name));
     const mine = new Set(S.mine.map((x) => x.card_id));
-    const grid = list.map((c) => `<div class="mk-cell">${cardHTML(c, { action: "mk-want", count: deck.get(c.id) })}<small class="${mine.has(c.id) ? "mk-mine" : "mk-new"}">${mine.has(c.id) ? "Tu l'as" : "Il vous manque"}${tierOf(c) ? " · contrepartie " + TIER_LABEL[tierOf(c)] : ""}</small></div>`).join("");
+    const grid = list.map((c) => `<div class="mk-cell">${cardHTML(c, { action: "mk-want", count: deck.get(c.id) })}<small class="${mine.has(c.id) ? "mk-mine" : "mk-new"}">${mine.has(c.id) ? "Tu l'as" : "Il te manque"}</small></div>`).join("");
     return `<button class="btn ghost" data-action="mk-back">← Retour</button>
       <div class="mk-head">${window.RhumAvatar.render(p.avatar, 56)}<div><h2 style="margin:0">Deck de ${esc(p.first_name)}</h2><p class="lede" style="margin:2px 0 0">${list.length} ${plural(list.length, "carte", "cartes")} · touche une carte pour la demander. Tu ne peux rien modifier dans son deck.</p></div></div>
       <div class="mk-grid">${grid || '<p class="empty">Ce deck est encore vide.</p>'}</div>`;
@@ -676,57 +709,56 @@
     if (!S.mk.loaded) return `<h1>Village</h1><p class="empty">Le village n'est pas encore installé (relancez 01_schema.sql dans Supabase).</p>`;
     if (v === "trades") return `<h1>Village</h1>${nav}${marketTradesHTML()}`;
     if (S.mk.playerId) return `<h1>Village</h1>${nav}${marketDeckHTML()}`;
-    return `<h1>Village</h1><p class="lede">Deal tes cartes contre une autre carte ou une action.</p><div class="mk-rules"><div class="t-costaud"><span><b>Tu veux une légendaire ?</b> Impossible de l'échanger avec une carte, tu dois proposer une action !</span></div></div>${nav}
+    return `<h1>Village</h1><p class="lede">Échange une de tes cartes contre une carte d'un autre joueur, quelle que soit sa rareté.</p>${nav}
       <div class="field"><label for="mq">Rechercher un joueur ou une carte</label><input id="mq" type="search" autocomplete="off" placeholder="Ex. Le Cam, Maxi Edmond de Rothschild, Marie…" value="${esc(S.mk.q)}"></div>
       <div id="mres">${marketSearchHTML()}</div>`;
   }
-  function perkCards(list, name) {
-    const groups = [["Week-end", []], ["Semaine", []], ["Autres", []]];
-    list.forEach((p) => {
-      const m = /^(Week-end|Semaine) · (.*)$/.exec(p);
-      const g = m ? groups.find((x) => x[0] === m[1]) : groups[2];
-      g[1].push([p, m ? m[2] : p]);
-    });
-    return groups.filter((g) => g[1].length).map((g) => `<div class="perk-group"><h4>${g[0]}</h4><div class="perk-grid">${g[1].map(([full, label]) => `<button type="button" class="perk" data-perk="${esc(full)}" aria-pressed="false">${esc(label)}</button>`).join("")}</div></div>`).join("");
-  }
   function openCompose(playerId, cardId) {
     const to = playerById(playerId), want = cardById(cardId);
-    const tier = tierOf(want);
     const counts = ownedCounts();
-    const mine = S.cards.filter((c) => counts.has(c.id)).sort((x, y) => (counts.get(y.id) - counts.get(x.id)) || x.name.localeCompare(y.name));
-    if (!tier && !mine.length) return toast("Tu n'as encore aucune carte à proposer.", true);
-    const opts = mine.map((c) => `<option value="${c.id}">${esc(c.name)} (${c.kind === "skipper" ? "skipper" : "bateau"}, ${RAR_LABEL[c.rarity]})${counts.get(c.id) > 1 ? " ×" + counts.get(c.id) : ""}</option>`).join("");
-    const list = [...((S.mk.perks && S.mk.perks.leger) || []), ...((S.mk.perks && S.mk.perks.costaud) || [])];
+    const mine = S.cards.filter((c) => counts.has(c.id)).sort((x, y) => (counts.get(y.id) - counts.get(x.id)) || RAR.indexOf(x.rarity) - RAR.indexOf(y.rarity) || x.name.localeCompare(y.name));
+    if (!mine.length) return toast("Tu n'as encore aucune carte à proposer.", true);
     const m = document.createElement("div");
     m.className = "modal"; m.setAttribute("role", "dialog");
-    m.innerHTML = `<div class="modal-in mk-compose"><h2 style="margin-top:0">Demander à ${esc(to.first_name)}</h2>
+    m.innerHTML = `<div class="modal-in mk-compose"><h2 style="margin-top:0">Échanger avec ${esc(to.first_name)}</h2>
       <p>Tu veux : ${cardLabel(want.id)}</p>
-      ${tier ? `<p class="tier-note t-${tier}">Carte ${RAR_LABEL[want.rarity].toLowerCase()} : impossible de l'échanger avec une carte. Propose une <b>action</b> !</p>`
-        : `<div class="field"><label for="mkgive">Je donne</label><select id="mkgive">${opts}</select></div><p class="muted" style="font-size:14px">Un petit extra du week-end est facultatif.</p>`}
-      <div class="perks">${perkCards(list)}</div>
-      <div class="field"><label for="mkother">Autre : écris ta proposition</label><input id="mkother" maxlength="120" placeholder="Ex. je te paie un café samedi"></div>
-      <button class="btn" id="mksend">Envoyer la demande</button><button class="btn alt" id="mkno" style="margin-top:8px">Annuler</button></div>`;
+      <div class="field"><label for="mkfind">Je donne : cherche dans tes cartes</label><input id="mkfind" type="search" autocomplete="off" placeholder="Nom d'un skipper ou d'un bateau…"></div>
+      <div class="chips" role="group" aria-label="Filtrer mes cartes"><button type="button" class="chip" data-f="all" aria-pressed="true">Toutes (${mine.length})</button><button type="button" class="chip" data-f="dupes" aria-pressed="false">Mes doublons (${mine.filter((c) => counts.get(c.id) > 1).length})</button></div>
+      <div class="mk-picklist" id="mkpicks"></div>
+      <p class="muted" id="mkchosen" style="font-size:14px;min-height:20px"></p>
+      <button class="btn" id="mksend" disabled>Envoyer la demande</button><button class="btn alt" id="mkno" style="margin-top:8px">Annuler</button></div>`;
     document.body.appendChild(m);
-    let chosen = "";
-    const other = m.querySelector("#mkother");
-    m.querySelectorAll(".perk").forEach((b) => b.addEventListener("click", () => {
-      const on = b.getAttribute("aria-pressed") !== "true";
-      m.querySelectorAll(".perk").forEach((x) => x.setAttribute("aria-pressed", "false"));
-      b.setAttribute("aria-pressed", on ? "true" : "false");
-      chosen = on ? b.dataset.perk : ""; if (on) other.value = "";
+    let chosen = null, dupesOnly = false;
+    const box = m.querySelector("#mkpicks"), find = m.querySelector("#mkfind"), send = m.querySelector("#mksend");
+    function paint() {
+      const qs = norm(find.value.trim());
+      const list = mine.filter((c) => (!dupesOnly || counts.get(c.id) > 1) && (!qs || norm(c.name).includes(qs) || norm(c.partner_name).includes(qs)));
+      box.innerHTML = list.map((c) => `<button type="button" class="mk-pick r-${c.rarity}" data-id="${c.id}" aria-pressed="${chosen === c.id}"><b>${esc(c.name)}</b><small>${c.kind === "skipper" ? "skipper" : "bateau"} · ${esc(RAR_LABEL[c.rarity])}${counts.get(c.id) > 1 ? " · ×" + counts.get(c.id) : ""}</small></button>`).join("") || '<p class="empty">Aucune carte ne correspond.</p>';
+    }
+    paint();
+    find.addEventListener("input", paint);
+    m.querySelectorAll("[data-f]").forEach((b) => b.addEventListener("click", () => {
+      dupesOnly = b.dataset.f === "dupes";
+      m.querySelectorAll("[data-f]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      paint();
     }));
-    other.addEventListener("input", () => { if (other.value) { chosen = ""; m.querySelectorAll(".perk").forEach((x) => x.setAttribute("aria-pressed", "false")); } });
+    box.addEventListener("click", (ev) => {
+      const b = ev.target.closest(".mk-pick"); if (!b) return;
+      chosen = Number(b.dataset.id); send.disabled = false;
+      m.querySelector("#mkchosen").innerHTML = "Tu donnes : " + cardLabel(chosen);
+      paint();
+    });
     m.querySelector("#mkno").addEventListener("click", () => m.remove());
     m.addEventListener("click", (ev) => { if (ev.target === m) m.remove(); });
-    m.querySelector("#mksend").addEventListener("click", async () => {
-      const btn = m.querySelector("#mksend"); btn.disabled = true;
-      let perk = chosen || (other.value.trim() ? "Autre : " + other.value.trim() : "");
-      if (tier && !perk) { btn.disabled = false; return toast("Choisis une contrepartie.", true); }
+    send.addEventListener("click", async () => {
+      if (!chosen) return;
+      send.disabled = true;
       try {
-        await rpc("propose_trade", { p_from: S.me.id, p_to: playerId, p_give: tier ? null : Number(m.querySelector("#mkgive").value), p_want: cardId, p_perk: perk || null });
+        const tid = await rpc("propose_trade", { p_from: S.me.id, p_to: playerId, p_give: chosen, p_want: cardId });
+        appPush({ trade_id: tid });
         m.remove(); S.mk.view = "trades"; S.mk.playerId = null;
         toast("Demande envoyée à " + to.first_name + " !"); await refresh();
-      } catch (e) { btn.disabled = false; toast(e.message, true); }
+      } catch (e) { send.disabled = false; toast(e.message, true); }
     });
   }
 
@@ -790,17 +822,182 @@
         <div class="field"><label for="nt">Titre</label><input id="nt" value="Album du Rhum"></div>
         <div class="field"><label for="nb">Message</label><input id="nb" placeholder="Un nouveau quiz vient d'arriver"></div>
         <button class="btn" data-action="send-notif">Envoyer à tous</button></div>
-      <div class="panel"><h3>Contreparties du marché</h3><p class="muted" style="font-size:14px;margin-bottom:10px">Une proposition par ligne, commençant par « Week-end · » ou « Semaine · ». Elles sont proposées pour les cartes épiques et légendaires. Les joueurs peuvent aussi écrire « Autre ».</p>
-        <div class="field"><label for="pkl">Actions proposées</label><textarea id="pkl" rows="12">${esc([...((S.mk.perks || {}).leger || []), ...((S.mk.perks || {}).costaud || [])].join("\n"))}</textarea></div><button class="btn" data-action="save-perks">Enregistrer</button></div>
+      <div class="panel"><h3>Mode pirate</h3>${(() => {
+        const pr = S.admin.pirate || { targets: [], raids: [], event: {} }, ev = pr.event || {};
+        const on = ev.mode === "pirate";
+        const who = ev.test ? (playerById(Number(ev.test)) || {}).first_name : null;
+        const state = on ? `<p class="log"><b>Actif</b> ${who ? "en test pour " + esc(who) : "pour tout le monde"}${ev.until ? " jusqu'au " + esc(new Date(ev.until).toLocaleString("fr-FR", { weekday: "short", hour: "2-digit", minute: "2-digit" })) : ""}.</p>` : '<p class="muted">Aucun mode actif.</p>';
+        const optP = S.players.map((p) => `<option value="${p.id}" ${S.me && p.id === S.me.id ? "selected" : ""}>Test : seulement ${esc(p.first_name)}</option>`).join("");
+        const tg = pr.targets.length ? pr.targets.map((t) => `${esc(t.holder)} détient le code de ${esc(t.target)}`).join("<br>") : "Aucun code attribué : lance 10_pirate_codes.sql dans Supabase.";
+        const rd = pr.raids.length ? pr.raids.slice(0, 20).map((r) => `${esc(r.thief)} → ${esc(r.victim)} : ${r.n} ${plural(r.n, "carte", "cartes")}${r.test ? " (test)" : ""}${r.notified ? "" : " · alerte à venir"}`).join("<br>") : "Aucun pillage.";
+        return `${state}
+          <div class="field"><label for="evm">Mode</label><select id="evm"><option value="">Aucun (arrêter)</option><option value="pirate" ${on ? "selected" : ""}>Pirate</option></select></div>
+          <div class="field"><label for="evt">Qui le voit ?</label><select id="evt"><option value="">Tout le monde (réel)</option>${optP}</select></div>
+          <div class="field"><label for="evu">Fin automatique (facultatif)</label><input id="evu" type="datetime-local"></div>
+          <button class="btn" data-action="set-event">Appliquer</button>
+          <h4 style="margin:14px 0 4px">Codes attribués</h4><div class="log">${tg}</div>
+          <h4 style="margin:14px 0 4px">Pillages</h4><div class="log">${rd}</div>`;
+      })()}</div>
+      <div class="panel"><h3>Texte des quiz</h3><p class="muted" style="font-size:14px;margin-bottom:10px">Questions, bonnes réponses (*) et explications (>) de chaque quiz publié, à copier.</p>
+        ${(() => { const qs = S.admin.quizTexts || []; if (!qs.length) return '<p class="muted">Aucun quiz.</p>'; const cur = qs.find((x) => String(x.id) === String(S.admin.qtId)) || qs[0];
+          return `<div class="field"><label for="qtsel">Quiz</label><select id="qtsel" data-qtext="1">${qs.map((x) => `<option value="${x.id}" ${x.id === cur.id ? "selected" : ""}>${esc(x.title)}${x.kind === "hard" ? " (difficile)" : ""}</option>`).join("")}</select></div>
+          <textarea id="qtout" rows="12" readonly>${esc(cur.text || "")}</textarea><button class="btn small" data-action="copy-quiz">Copier</button>`; })()}</div>
       <div class="panel"><h3>Quiz ouverts</h3>${S.quizzes.filter((z) => z.is_open).map((z) => `<div class="q-card"><div class="grow"><h3>${esc(z.title)}</h3></div><button class="btn small alt" data-action="close-quiz" data-id="${z.id}">Fermer</button></div>`).join("") || '<p class="muted">Aucun.</p>'}</div>
       <button class="btn ghost" data-action="tab" data-tab="score">Quitter l'espace organisateur</button>`;
   }
 
+  // ---------- Mode pirate ----------
+  const Music = (() => {
+    let ctx = null, master = null, timer = null, nodes = [], step = 0, wanted = false;
+    const MELODY = [110, 130.81, 123.47, 103.83, 110, 87.31, 98, 82.41];
+    const muted = () => { try { return localStorage.getItem("rhum_music") === "off"; } catch (e) { return false; } };
+    function tick() {
+      if (!ctx || ctx.state !== "running") return;
+      const t = ctx.currentTime, f = MELODY[step % MELODY.length] * (step % 16 >= 8 ? 2 : 1);
+      const o = ctx.createOscillator(), g = ctx.createGain(), lp = ctx.createBiquadFilter();
+      o.type = "sawtooth"; o.frequency.value = f; lp.type = "lowpass"; lp.frequency.value = 700;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+      o.connect(lp); lp.connect(g); g.connect(master); o.start(t); o.stop(t + 0.75);
+      if (step % 4 === 0) {
+        const b = ctx.createOscillator(), bg = ctx.createGain();
+        b.type = "sine"; b.frequency.setValueAtTime(90, t); b.frequency.exponentialRampToValueAtTime(38, t + 0.35);
+        bg.gain.setValueAtTime(0.5, t); bg.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+        b.connect(bg); bg.connect(master); b.start(t); b.stop(t + 0.5);
+      }
+      step++;
+    }
+    function boot() {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      if (!ctx) {
+        ctx = new AC(); master = ctx.createGain(); master.gain.value = 0.55; master.connect(ctx.destination);
+        [55, 55.6].forEach((fr) => {
+          const o = ctx.createOscillator(), g = ctx.createGain(), lp = ctx.createBiquadFilter();
+          o.type = "sawtooth"; o.frequency.value = fr; lp.type = "lowpass"; lp.frequency.value = 220; g.gain.value = 0.12;
+          o.connect(lp); lp.connect(g); g.connect(master); o.start(); nodes.push(o);
+        });
+      }
+      if (!timer) timer = setInterval(tick, 520);
+      if (ctx.state === "suspended") ctx.resume().catch(() => {});
+    }
+    function unlock() { if (wanted && ctx && ctx.state === "suspended") ctx.resume().catch(() => {}); }
+    document.addEventListener("pointerdown", unlock);
+    return {
+      start() { wanted = true; if (muted()) return; try { boot(); } catch (e) {} },
+      stop() { wanted = false; if (timer) { clearInterval(timer); timer = null; } if (ctx) { nodes.forEach((o) => { try { o.stop(); } catch (e) {} }); nodes = []; try { ctx.close(); } catch (e) {} ctx = null; } },
+      toggle() { const off = !muted(); try { localStorage.setItem("rhum_music", off ? "off" : "on"); } catch (e) {} if (off) { const w = wanted; this.stop(); wanted = w; } else this.start(); return !off; },
+      isOn: () => !muted()
+    };
+  })();
+
+  function pirateBanner() {
+    if (!isPirate()) return "";
+    const unread = S.letter && !S.letter.seen;
+    return `<div class="pirate-banner">${jollyRoger(34)}<div><b>Mode pirate${S.event.test ? " (test : toi seul le vois)" : ""}</b><span>${unread ? "Une lettre t'attend." : "Va voler les cartes des autres dans l'onglet Pillage."}</span></div>
+      ${unread ? '<button class="btn small" data-action="show-letter">Lire la lettre</button>' : ""}<button class="pir-music" data-action="music" aria-label="Musique">${Music.isOn() ? "♪" : "♪̸"}</button></div>`;
+  }
+
+  function letterInner() {
+    const L = S.letter;
+    const digits = L.pin ? String(L.pin).split("").map((d) => `<span>${esc(d)}</span>`).join("") : "<span>?</span>";
+    return `<div class="letter-in">${jollyRoger(72)}
+      <h2>Lettre du pirate</h2>
+      ${S.event.test ? '<p class="pir-test">TEST : toi seul vois ceci.</p>' : ""}
+      <p>Mille sabords ! Cette nuit, tu n'es plus un gentil collectionneur. Voici le code secret de <b>${esc(L.name)}</b> :</p>
+      <div class="letter-code" aria-label="Code de ${esc(L.name)}">${digits}</div>
+      ${L.changed ? `<p class="pir-test">${esc(L.name)} a changé son code : ton ancien code ne marche plus.</p>` : ""}
+      ${L.pin ? "" : `<p class="pir-test">${esc(L.name)} n'a pas encore choisi de code : repasse plus tard.</p>`}
+      <p>Va voler les cartes que tu souhaites : onglet <b>Pillage</b>. Moins tu as de cartes, plus tu peux en prendre.</p>
+      <p class="muted" style="font-size:13px">Il sera prévenu 5 minutes plus tard, et pourra changer son code.</p></div>`;
+  }
+  async function markLetterSeen() {
+    if (!S.letter || S.letter.seen) return;
+    S.letter.seen = true;
+    try { await rpc("pirate_mark_letter_seen", { p_player: S.me.id }); } catch (e) {}
+  }
+  function showLetterModal() {
+    if (document.querySelector(".letter-modal") || !S.letter) return;
+    Music.start();
+    const m = document.createElement("div");
+    m.className = "modal letter-modal"; m.setAttribute("role", "dialog");
+    m.innerHTML = `<div class="modal-in">${letterInner()}<button class="btn" id="lt-go">À l'abordage !</button><button class="btn alt" id="lt-later" style="margin-top:8px">Plus tard</button></div>`;
+    document.body.appendChild(m);
+    m.querySelector("#lt-go").addEventListener("click", async () => { m.remove(); await markLetterSeen(); S.tab = "pillage"; S.pil = { step: "code", info: null, picked: [], taken: null }; try { await loadMarket(); } catch (e) {} render(); window.scrollTo(0, 0); });
+    m.querySelector("#lt-later").addEventListener("click", async () => { m.remove(); await markLetterSeen(); render(); });
+  }
+  function maybeShowLetter() {
+    if (isPirate() && S.letter && !S.letter.seen && !S.overlay && !S.boosters.length) showLetterModal();
+  }
+
+  function recapHTML(r) {
+    const cards = (r.taken || []).map((id) => `<li>${cardLabel(id)}</li>`).join("");
+    return `<div class="rc-row">${r.test ? '<span class="pir-test">TEST</span> ' : ""}<b>${esc(r.thief)}</b> est entré dans ton deck.
+      ${r.taken && r.taken.length ? `Il t'a volé :<ul class="rc-list">${cards}</ul>` : "<br><small>Pour l'instant, il n'a rien pris.</small>"}</div>`;
+  }
+  function maybeShowRecap() {
+    if (!S.recap || !S.recap.length || S.overlay || document.querySelector(".recap-modal")) return;
+    const real = S.recap.some((r) => !r.test);
+    const m = document.createElement("div");
+    m.className = "modal recap-modal"; m.setAttribute("role", "dialog");
+    m.innerHTML = `<div class="modal-in">${jollyRoger(60)}<h2>Tu t'es fait voler !</h2>${S.recap.map(recapHTML).join("")}
+      ${real ? `<p>Ton code est connu d'un pirate. Change-le maintenant :</p>
+      <div class="field"><label for="newpin">Nouveau code à 4 chiffres</label><input id="newpin" inputmode="numeric" maxlength="4" autocomplete="off" type="password"></div>
+      <button class="btn" id="rc-pin">Changer mon code</button>` : ""}
+      <button class="btn alt" id="rc-ok" style="margin-top:8px">${real ? "Plus tard" : "Fermer"}</button></div>`;
+    document.body.appendChild(m);
+    const close = async () => { m.remove(); S.recap = []; try { await rpc("pirate_recap_seen", { p_player: S.me.id }); } catch (e) {} };
+    m.querySelector("#rc-ok").addEventListener("click", close);
+    const pin = m.querySelector("#newpin");
+    if (pin) pin.addEventListener("input", () => { pin.value = pin.value.replace(/\D/g, "").slice(0, 4); });
+    const go = m.querySelector("#rc-pin");
+    if (go) go.addEventListener("click", async () => {
+      const np = pin.value;
+      if (!/^\d{4}$/.test(np)) return toast("Le code doit faire 4 chiffres", true);
+      let old = ""; try { old = localStorage.getItem("rhum_pin") || ""; } catch (e) {}
+      try { await rpc("player_change_pin", { p_player: S.me.id, p_old: old, p_new: np }); } catch (e) { return toast(e.message, true); }
+      try { localStorage.setItem("rhum_pin", np); } catch (e) {}
+      toast("Code changé. Retiens-le bien !"); close();
+    });
+  }
+
+  // Écran Pillage
+  function pillageHTML() {
+    const L = S.letter, P = S.pil;
+    const head = `<h1>Pillage</h1>`;
+    if (!isPirate()) return `${head}<p class="empty">Le mode pirate n'est pas actif.</p>`;
+    if (!L) return `${head}<p class="empty">Tu n'as pas de code à utiliser pour cette fois. Reste sur tes gardes !</p>`;
+    const victim = playerById(L.target);
+    const vAv = victim ? window.RhumAvatar.render(victim.avatar, 64) : "";
+    if (L.done && P.step !== "done") return `${head}<div class="panel"><div class="pil-target">${vAv}<div><h2>Déjà pillé</h2><p>Tu as déjà pillé ${esc(L.name)}. Un pirate ne frappe qu'une fois !</p></div></div></div>`;
+    if (P.step === "done") {
+      return `${head}<div class="panel"><h2>Butin</h2>${P.taken && P.taken.length ? `<div class="summary">${P.taken.map((id) => { const c = cardById(id); return c ? cardHTML(c, { isNew: true }) : ""; }).join("")}</div><p class="lede">Ces cartes sont dans ton album.${S.event.test ? " (Test : rien n'a vraiment bougé.)" : ""}</p>` : "<p>Tu repars les mains vides.</p>"}</div>`;
+    }
+    if (P.step === "code") {
+      return `${head}<div class="panel"><div class="pil-target">${vAv}<div><h2>Cible : ${esc(L.name)}</h2><p>Entre son code à 4 chiffres pour entrer dans son deck.</p></div></div>
+        <div class="field"><label for="pilpin">Code de ${esc(L.name)}</label><input id="pilpin" inputmode="numeric" maxlength="4" autocomplete="off" type="password" placeholder="••••"></div>
+        <button class="btn" data-action="pil-enter">Entrer chez ${esc(L.name)}</button>
+        <button class="btn alt" data-action="show-letter" style="margin-top:8px">Relire la lettre</button></div>`;
+    }
+    const info = P.info || {};
+    const deck = deckOf(L.target);
+    const list = S.cards.filter((c) => deck.has(c.id)).sort((x, y) => RAR.indexOf(x.rarity) - RAR.indexOf(y.rarity) || x.name.localeCompare(y.name));
+    const picked = new Set(P.picked);
+    const grid = list.map((c) => `<div class="mk-cell${picked.has(c.id) ? " sel" : ""}">${cardHTML(c, { action: "pil-pick", count: deck.get(c.id) })}<small>${picked.has(c.id) ? "Dans ton sac" : " "}</small></div>`).join("");
+    return `${head}<div class="panel"><div class="pil-target">${vAv}<div><h2>Chez ${esc(L.name)}</h2>
+        <p>Tu peux voler <b>${info.quota || 1}</b> ${(info.quota || 1) > 1 ? "cartes" : "carte"}${info.legend_cap ? ", dont une seule légendaire" : ""}. Plus tu as peu de cartes, plus tu en prends.</p></div></div>
+      <p class="pil-count">${P.picked.length} / ${info.quota || 1} dans ton sac</p>
+      <button class="btn" data-action="pil-steal" ${P.picked.length ? "" : "disabled"}>Voler ces cartes</button></div>
+      <div class="mk-grid">${grid || '<p class="empty">Ce deck est vide.</p>'}</div>`;
+  }
+
   // ---------- Rendu principal ----------
   function render() {
+    document.body.classList.toggle("pirate", isPirate());
+    if (!isPirate()) Music.stop();
     if (!S.me) return renderPicker();
     let inner;
     switch (S.tab) {
+      case "pillage": inner = pillageHTML(); break;
       case "quiz": inner = quizHTML(); break;
       case "boosters": inner = boostersHTML(); break;
       case "score": inner = scoreHTML(); break;
@@ -852,7 +1049,15 @@
         if (list[i].c.rarity === "legendaire") { ov.classList.remove("flash"); void ov.offsetWidth; ov.classList.add("flash"); }
         document.getElementById("hint").textContent = i === list.length - 1 ? "Touche pour voir le résumé" : "Touche pour la carte suivante";
       } else if (i < list.length - 1) { i++; stageCard(); }
+      else if (isPirate() && S.letter && !S.letter.seen) stageLetter();
       else stageSummary();
+    }
+
+    function stageLetter() {
+      Music.start();
+      ov.className = "ov letter-ov";
+      ov.innerHTML = `${letterInner()}<button class="btn" id="ltok">Voir mon butin</button>`;
+      document.getElementById("ltok").addEventListener("click", async () => { await markLetterSeen(); stageSummary(); });
     }
 
     function stageSummary() {
@@ -896,20 +1101,51 @@
       try { localStorage.setItem("rhum_player", String(p.id)); localStorage.setItem("rhum_pin", pin); } catch (e) {}
       S.tab = "album"; await doStreak(); await refresh(true); maybeInvite();
     },
-    switch() { S.me = null; try { localStorage.removeItem("rhum_player"); localStorage.removeItem("rhum_pin"); } catch (e) {} S.run = null; render(); },
-    async tab(el) { S.tab = el.dataset.tab; S.run = null; render(); window.scrollTo(0, 0); if (S.tab === "marche") { try { await loadMarket(); if (S.tab === "marche") render(); } catch (e) {} } },
+    switch() { S.me = null; S.event = { mode: null }; S.letter = null; S.recap = []; Music.stop(); try { localStorage.removeItem("rhum_player"); localStorage.removeItem("rhum_pin"); } catch (e) {} S.run = null; render(); },
+    async tab(el) { S.tab = el.dataset.tab; S.run = null; render(); window.scrollTo(0, 0); if (S.tab === "marche" || S.tab === "pillage") { try { await loadMarket(); if (S.tab === "marche" || S.tab === "pillage") render(); } catch (e) {} } },
     filter(el) { S.filters[el.dataset.key] = el.dataset.val; render(); },
     "toggle-missing"() { S.filters.missing = !S.filters.missing; render(); },
+    "show-letter"() { document.querySelectorAll(".letter-modal").forEach((x) => x.remove()); showLetterModal(); },
+    music() { Music.toggle(); render(); },
+    async "pil-enter"() {
+      const pin = (document.getElementById("pilpin") || {}).value || "";
+      if (!/^\d{4}$/.test(pin)) return toast("Le code doit faire 4 chiffres", true);
+      const r = await rpc("pirate_enter", { p_thief: S.me.id, p_victim: S.letter.target, p_pin: pin });
+      if (r && r.error) return toast(r.error, true);
+      S.pil = { step: "deck", info: r, picked: [], taken: null };
+      setTimeout(pingAlerts, (r.test ? 65 : 305) * 1000);
+      try { await loadMarket(); } catch (e) {}
+      render(); window.scrollTo(0, 0);
+    },
+    "pil-pick"(el) {
+      const id = Number(el.dataset.card), P = S.pil, info = P.info || {}, c = cardById(id);
+      const at = P.picked.indexOf(id);
+      if (at >= 0) P.picked.splice(at, 1);
+      else {
+        if (P.picked.length >= (info.quota || 1)) return toast(`Tu ne peux voler que ${info.quota || 1} ${(info.quota || 1) > 1 ? "cartes" : "carte"}.`, true);
+        if (info.legend_cap && c.rarity === "legendaire" && P.picked.filter((x) => (cardById(x) || {}).rarity === "legendaire").length >= info.legend_cap) return toast("Une seule légendaire à la fois.", true);
+        P.picked.push(id);
+      }
+      render();
+    },
+    async "pil-steal"() {
+      const P = S.pil;
+      if (!P.picked.length) return;
+      const r = await rpc("pirate_steal", { p_thief: S.me.id, p_victim: S.letter.target, p_cards: P.picked });
+      S.pil = { step: "done", info: P.info, picked: [], taken: r.taken };
+      await refresh(); window.scrollTo(0, 0);
+    },
     "mk-view"(el) { S.mk.view = el.dataset.view; S.mk.playerId = null; render(); },
     "mk-player"(el) { S.mk.playerId = Number(el.dataset.id); S.mk.view = "search"; render(); window.scrollTo(0, 0); },
     "mk-back"() { S.mk.playerId = null; render(); },
     "mk-want"(el) { openCompose(Number(el.dataset.player || S.mk.playerId), Number(el.dataset.card)); },
     async "mk-accept"(el) {
       const r = await rpc("respond_trade", { p_player: S.me.id, p_trade: Number(el.dataset.id), p_accept: true });
-      toast(r === "accepted" ? "C'est fait ! N'oublie pas la contrepartie s'il y en a une." : "Échange impossible : une des cartes n'est plus disponible.", r !== "accepted");
+      appPush({ trade_id: Number(el.dataset.id) });
+      toast(r === "accepted" ? "C'est fait, la carte est dans ton album !" : "Échange impossible : une des cartes n'est plus disponible.", r !== "accepted");
       await refresh();
     },
-    async "mk-decline"(el) { await rpc("respond_trade", { p_player: S.me.id, p_trade: Number(el.dataset.id), p_accept: false }); toast("Demande refusée."); await refresh(); },
+    async "mk-decline"(el) { await rpc("respond_trade", { p_player: S.me.id, p_trade: Number(el.dataset.id), p_accept: false }); appPush({ trade_id: Number(el.dataset.id) }); toast("Demande refusée."); await refresh(); },
     async "mk-cancel"(el) { await rpc("cancel_trade", { p_player: S.me.id, p_trade: Number(el.dataset.id) }); toast("Demande annulée."); await refresh(); },
     rules() {
       const m = document.createElement("div");
@@ -997,7 +1233,7 @@
         await rpc("admin_publish_quiz", { p_code: S.adminCode, p_title: title, p_questions: parsed, p_kind: kind, p_min_level: kind === "hard" ? lvl : 1 });
         toast(`Quiz publié (${parsed.length} questions).`);
         if (document.getElementById("qn") && document.getElementById("qn").checked) notify("Nouveau quiz", kind === "hard" ? "Un quiz difficile vient d'arriver : " + title : title);
-        await refresh();
+        await refresh(); await loadAdmin(); render();
       } catch (e) { toast(e.message, true); }
     },
     async "make-drop"() {
@@ -1019,11 +1255,6 @@
         toast("Carte offerte."); await refresh();
       } catch (e) { toast(e.message, true); }
     },
-    async "save-perks"() {
-      const f = (id) => document.getElementById(id).value.split("\n").map((x) => x.trim().replace(/\|/g, "/")).filter(Boolean).join("|");
-      await rpc("admin_set_perks", { p_code: S.adminCode, p_leger: f("pkl"), p_costaud: "" });
-      toast("Contreparties enregistrées."); await refresh();
-    },
     async "make-flash"() {
       try {
         const label = document.getElementById("fl").value || "Légendaire éclair";
@@ -1043,6 +1274,18 @@
         toast("Carte fétiche enregistrée."); await loadAdmin(); render();
       } catch (e) { toast(e.message, true); }
     },
+    async "set-event"() {
+      const mode = document.getElementById("evm").value, tp = document.getElementById("evt").value, un = document.getElementById("evu").value;
+      await rpc("admin_set_event", { p_code: S.adminCode, p_mode: mode, p_until: un ? new Date(un).toISOString() : null, p_test_player: tp ? Number(tp) : null });
+      toast(mode ? (tp ? "Mode pirate lancé en test." : "Mode pirate lancé pour tout le monde !") : "Mode arrêté.");
+      await loadAdmin(); await loadEvent(); render();
+    },
+    async "copy-quiz"() {
+      const t = document.getElementById("qtout");
+      if (!t) return;
+      try { await navigator.clipboard.writeText(t.value); toast("Texte copié."); }
+      catch (e) { t.select(); toast("Sélectionné : copie-le à la main."); }
+    },
     async "close-quiz"(el) {
       try { await rpc("admin_close_quiz", { p_code: S.adminCode, p_quiz: Number(el.dataset.id) }); toast("Quiz fermé."); await refresh(); }
       catch (e) { toast(e.message, true); }
@@ -1053,6 +1296,8 @@
     try { S.adminData = { fetish: await rpc("admin_fetish_list", { p_code: S.adminCode }) }; } catch (e) { S.adminData = { fetish: [] }; }
     try { S.admin.levels = await rpc("admin_levels", { p_code: S.adminCode }); } catch (e) { S.admin.levels = []; }
     try { S.admin.hist = await rpc("admin_player_cards", { p_code: S.adminCode }); } catch (e) { S.admin.hist = []; }
+    try { S.admin.quizTexts = await rpc("admin_quiz_texts", { p_code: S.adminCode }); } catch (e) { S.admin.quizTexts = []; }
+    try { S.admin.pirate = await rpc("admin_pirate_overview", { p_code: S.adminCode }); } catch (e) { S.admin.pirate = null; }
   }
 
   // Envoie une notification push à tous via la fonction Supabase "send-push" (voir LISEZ-MOI)
@@ -1075,6 +1320,7 @@
 
   app.addEventListener("change", async (ev) => {
     const el = ev.target;
+    if (el && el.dataset && el.dataset.qtext) { S.admin.qtId = el.value; render(); return; }
     if (el && el.dataset && el.dataset.hist) { S.admin.histP = el.value; render(); return; }
     if (el && el.dataset && el.dataset.level) {
       try { await rpc("admin_set_level", { p_code: S.adminCode, p_player: Number(el.dataset.level), p_level: Number(el.value) }); toast("Niveau enregistré."); }
@@ -1108,6 +1354,7 @@
   async function refresh() {
     try { await load(); } catch (e) { toast(e.message, true); }
     render();
+    maybeShowLetter(); maybeShowRecap();
   }
 
 
@@ -1194,6 +1441,7 @@
     if (S.me) { await doStreak(); await load(); }
     if (S.adminCode) loadAdmin();
     render();
+    if (S.me) { maybeShowLetter(); maybeShowRecap(); }
     if (S.me) maybeInvite();
     setInterval(() => {
       if (document.hidden || S.overlay || S.run || !S.me || S.tab === "admin") return;

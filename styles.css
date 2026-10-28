@@ -420,3 +420,46 @@ textarea { min-height: 220px; font-family: var(--body); }
 .rv-line.ko { color: #FF9B9B; }
 .pair-owners { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 4px 0; font-size: 14px; color: var(--ink-soft); }
 .pair-owners .chip.own { padding: 4px 10px; min-height: 0; }
+
+
+/* ---------- Village : choisir une carte à donner ---------- */
+.mk-picklist { display: grid; gap: 6px; max-height: 38dvh; overflow-y: auto; margin: 10px 0; }
+.mk-pick { text-align: left; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--sea-700); background: var(--sea-800); color: var(--ink); display: flex; flex-direction: column; gap: 2px; }
+.mk-pick b { font: 700 15px/1.2 var(--body); }
+.mk-pick small { color: var(--ink-soft); font-size: 13px; }
+.mk-pick[aria-pressed="true"] { border-color: var(--flag-yellow); box-shadow: 0 0 0 2px var(--flag-yellow) inset; }
+.mk-compose { background: var(--sea-900); border-radius: 16px; padding: 18px; }
+
+/* ---------- Mode pirate ---------- */
+body.pirate {
+  --sea-950: #060606; --sea-900: #0d0d0f; --sea-800: #151517; --sea-700: #2a2a2e; --sea-600: #6b1019;
+  --ink: #EFE8D8; --ink-soft: #BDB39F; --ink-faint: #8C8474;
+  --flag-red: #C41E3A; --flag-yellow: #D9B96B; --flag-blue: #7C8594; --flag-white: #EFE8D8;
+  --avatar-bg: #2a2a2e;
+}
+body.pirate .tabbar-in { grid-template-columns: repeat(6, 1fr); }
+body.pirate .tab { font-size: 12px; }
+.pirate-banner { display: flex; align-items: center; gap: 12px; margin: 0 0 14px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--flag-red); background: #1a0509; }
+.pirate-banner > div { flex: 1; min-width: 0; }
+.pirate-banner b { display: block; font: 800 18px/1.1 var(--display); letter-spacing: .04em; color: var(--flag-red); text-transform: uppercase; }
+.pirate-banner span { color: var(--ink-soft); font-size: 14px; }
+.pirate-banner .btn.small { padding: 6px 10px; }
+.pir-music { background: none; border: 1px solid var(--sea-700); border-radius: 50%; width: 36px; height: 36px; font-size: 18px; color: var(--ink); }
+.jolly { flex: none; }
+.pir-test { display: inline-block; background: var(--flag-red); color: #fff; font: 700 12px/1 var(--body); padding: 4px 8px; border-radius: 6px; letter-spacing: .08em; }
+.letter-in { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; background: #120a0a; border: 1px solid var(--flag-red); border-radius: 16px; padding: 20px 16px; }
+.letter-in h2 { font: 800 28px/1 var(--display); text-transform: uppercase; letter-spacing: .05em; color: var(--flag-red); }
+.letter-code { display: flex; gap: 10px; }
+.letter-code span { font: 800 44px/1 var(--display); width: 2ch; padding: 10px 0; border-radius: 10px; background: #000; border: 2px solid var(--flag-yellow); color: var(--flag-yellow); }
+.ov.letter-ov { overflow-y: auto; justify-content: flex-start; padding-top: 28px; background: #060606; }
+.letter-modal .modal-in, .recap-modal .modal-in { background: transparent; }
+.recap-modal .modal-in { background: #120a0a; border: 1px solid var(--flag-red); border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+.recap-modal h2 { text-align: center; font: 800 26px/1 var(--display); color: var(--flag-red); text-transform: uppercase; }
+.recap-modal .jolly { align-self: center; }
+.rc-row { background: var(--sea-800); border-radius: 10px; padding: 10px 12px; }
+.rc-list { margin: 6px 0 0 18px; }
+.pil-target { display: flex; gap: 14px; align-items: center; margin-bottom: 12px; }
+.pil-target h2 { font: 800 24px/1.1 var(--display); }
+.pil-count { margin: 8px 0; font-weight: 700; color: var(--flag-yellow); }
+.mk-cell.sel .card { outline: 3px solid var(--flag-red); outline-offset: 2px; }
+.mk-cell.sel small { color: var(--flag-red); font-weight: 700; }
