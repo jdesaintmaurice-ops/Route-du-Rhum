@@ -29,13 +29,24 @@
 <script>
 var HASH = "1b0bd203fbcd702f9bc9b10ac3d0fc21";
 function ina(id) { return "https://player.ina.fr/player/embed/" + id + "/1/" + HASH + "/wide/1"; }
+/* Variantes à essayer pour une vidéo INA (l'hôte du lecteur annoncé par le site est player-hub.ina.fr) */
+function variantes(id) {
+  var min = id.toLowerCase();
+  return [
+    ["hub /embed/ID", "https://player-hub.ina.fr/embed/" + id],
+    ["hub /embed/id (minuscules)", "https://player-hub.ina.fr/embed/" + min],
+    ["hub /player/embed/…", "https://player-hub.ina.fr/player/embed/" + id + "/1/" + HASH + "/wide/1"],
+    ["hub /player/embed/… (minuscules)", "https://player-hub.ina.fr/player/embed/" + min + "/1/" + HASH + "/wide/1"],
+    ["ancien lecteur (minuscules)", "https://player.ina.fr/player/embed/" + min + "/1/" + HASH + "/wide/1"]
+  ];
+}
 
 var VIDEOS = [
   { titre: "Barnier (YouTube)", src: "https://www.youtube.com/embed/MmM8GKj5lyE",
     page: "https://www.youtube.com/watch?v=MmM8GKj5lyE" },
-  { titre: "Twirling (INA)", src: ina("G3956346_001_031"),
+  { titre: "Twirling (INA)", ina: "G3956346_001_031", src: ina("G3956346_001_031"),
     page: "https://www.ina.fr/ina-eclaire-actu/video/g3956346_001_031/on-a-mouille-le-maillot-le-twirling" },
-  { titre: "Bière (INA)", src: ina("LL00001246912"),
+  { titre: "Bière (INA)", ina: "LL00001246912", src: ina("LL00001246912"),
     page: "https://www.ina.fr/ina-eclaire-actu/video/ll00001246912/fabrique-ta-biere-toi-meme" }
 ];
 
@@ -50,6 +61,15 @@ VIDEOS.forEach(function (v, n) {
   function charge(u) { f.src = u; src.textContent = "Adresse testée : " + u; }
   charge(v.src);
   s.querySelector("a").href = v.page;
+  if (v.ina) {
+    var bar = document.createElement("p"); bar.innerHTML = "<small>Variantes à essayer :</small><br>";
+    variantes(v.ina).forEach(function (x) {
+      var b = document.createElement("button"); b.type = "button"; b.textContent = x[0]; b.style.margin = "4px 6px 0 0"; b.style.background = "#333";
+      b.addEventListener("click", function () { charge(x[1]); });
+      bar.appendChild(b);
+    });
+    s.insertBefore(bar, inp);
+  }
   s.querySelector("button").addEventListener("click", function () { if (/^https:\/\//.test(inp.value.trim())) charge(inp.value.trim()); });
   liste.appendChild(s);
 });
