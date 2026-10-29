@@ -233,7 +233,7 @@
     players: [], cards: [], mine: [], boosters: [], quizzes: [], questions: [],
     subs: [], drops: [], claims: [], scores: [], daily: [],
     filters: { cls: "all", rar: "all", missing: false },
-    run: null, overlay: false, adminCode: null, adminData: null,
+    run: null, overlay: false, adminCode: null, adminData: null, games: null, jeu: { open: null },
     flash: [], myLevel: 3, hardSubs: [], streak: null, admin: { levels: [] },
     mk: { view: "search", playerId: null, q: "", decks: [], trades: [], loaded: false },
     event: { mode: null, test: false }, letter: null, recap: [], pil: { step: "code", info: null, picked: [], taken: null }
@@ -306,6 +306,7 @@
   async function loadEvent() {
     if (!S.me) { S.event = { mode: null }; S.letter = null; S.recap = []; return; }
     try { S.event = (await rpc("event_state", { p_player: S.me.id })) || { mode: null }; } catch (e) { S.event = { mode: null }; }
+    await loadGames();
     S.letter = null;
     pingAlerts();
     if (S.event.mode === "pirate") {
@@ -314,6 +315,11 @@
     try { S.recap = (await rpc("pirate_recap", { p_player: S.me.id })) || []; } catch (e) { S.recap = []; }
     S.com = null;
     if (S.event.mode === "communiste") await loadCom();
+  }
+  async function loadGames() {
+    try { S.games = S.me ? await rpc("games_state", { p_player: S.me.id }) : null; } catch (e) { S.games = null; }
+    if (S.games && !S.games.mode) S.games = null;
+    if (!S.games && S.tab === "jeu") S.tab = "album";
   }
   async function loadCom() {
     try { S.com = await rpc("com_state", { p_player: S.me.id }); } catch (e) { S.com = null; }
@@ -331,6 +337,7 @@
   }
   let lastPing = 0;
   const pingAlerts = (force) => { if (!force && Date.now() - lastPing < 50000) return; lastPing = Date.now(); appPush({ check_raids: true, check_daily: true, check_com: true }); };
+  const isGames = () => !!(S.me && S.games && S.games.mode);
   const isPirate = () => !!(S.me && S.event && S.event.mode === "pirate");
   const isCom = () => !!(S.me && S.event && S.event.mode === "communiste");
 
@@ -445,6 +452,7 @@
     const tabs = [["marche", "Village"], ["album", "Album"], ["quiz", "Quiz"], ["boosters", "Boosters"], ["score", "Score"]];
     if (isPirate()) tabs.splice(1, 0, ["pillage", "Pillage"]);
     if (isCom()) tabs.splice(1, 0, ["patrimoine", "Patrimoine"]);
+    if (isGames()) tabs.splice(tabs.length - 1, 0, ["jeu", "Jeu"]);
     const incoming = S.mk.trades.filter((t) => t.to_player === S.me.id && t.status === "pending").length;
     const badge = { quiz: todo, boosters: pending, marche: incoming, pillage: (isPirate() && S.letter && !S.letter.done) ? 1 : 0, patrimoine: (isCom() && S.com && S.com.me && S.com.me.status === "open" && !S.com.closed) ? 1 : 0 };
     try { if (navigator.setAppBadge) navigator.setAppBadge(todo + pending + incoming); } catch (e) {}
@@ -453,7 +461,7 @@
           <span><span class="top-name">${esc(S.me.first_name)}</span><br><span class="top-sub">Changer de joueur</span></span></button>
         <div class="top-score"><b>${myScore().total}</b><span>points</span></div></div>${pennants()}</header>
       <main id="view" class="view">${pirateBanner()}${comBanner()}${flashBanner()}${inner}</main>
-      <nav class="tabbar" aria-label="Navigation"><div class="tabbar-in">${tabs.map(([k, l]) => `<button class="tab" data-action="tab" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ""}>${l}${badge[k] ? `<span class="dot" aria-label="${badge[k]} à faire">${badge[k]}</span>` : ""}</button>`).join("")}</div></nav>`;
+      <nav class="tabbar" aria-label="Navigation"><div class="tabbar-in" style="grid-template-columns:repeat(${tabs.length},1fr)">${tabs.map(([k, l]) => `<button class="tab" data-action="tab" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ""}>${l}${badge[k] ? `<span class="dot" aria-label="${badge[k]} à faire">${badge[k]}</span>` : ""}</button>`).join("")}</div></nav>`;
   }
 
   // --- Légendaire éclair ---
@@ -870,6 +878,8 @@
       })()}</div>
 <!--S:ev-->
       <div class="panel"><h3>Impôt communiste</h3>${comAdminHTML()}</div>
+<!--S:ev-->
+      <div class="panel"><h3>Jeux : routeur et lancer d'amarre</h3>${gamesAdminHTML()}</div>
 <!--S:jeu-->
       <div class="panel"><h3>Texte des quiz</h3><p class="muted" style="font-size:14px;margin-bottom:10px">Questions, bonnes réponses (*) et explications (>) de chaque quiz publié, à copier.</p>
         ${(() => { const qs = S.admin.quizTexts || []; if (!qs.length) return '<p class="muted">Aucun quiz.</p>'; const cur = qs.find((x) => String(x.id) === String(S.admin.qtId)) || qs[0];
@@ -887,10 +897,26 @@
     const tabs = [["ev", "Événements"], ["jeu", "Jeu"], ["cadeaux", "Cadeaux"], ["joueurs", "Joueurs"], ["suivi", "Suivi"]];
     const ev = (S.admin.pirate && S.admin.pirate.event) || {}, st = S.admin.status || {};
     const modeTxt = ev.mode ? (ev.mode === "communiste" ? "Communiste" : "Pirate") + (ev.test ? " (test)" : "") : "aucun";
-    const bar = `<div class="adm-bar"><span><b>Mode</b> ${modeTxt}</span><span><b>Quiz ouverts</b> ${st.open_quizzes != null ? st.open_quizzes : S.quizzes.filter((z) => z.is_open).length}</span><span><b>Notifications</b> ${st.push_players != null ? st.push_players + " / " + S.players.length + " joueurs" : "—"}</span></div>`;
+    const bar = `<div class="adm-bar"><span><b>Mode</b> ${modeTxt}</span><span><b>Jeux</b> ${S.admin.games ? (S.admin.games.mode === "on" ? "ouverts" : S.admin.games.mode === "test" ? "test" : "fermés") : "—"}</span><span><b>Quiz ouverts</b> ${st.open_quizzes != null ? st.open_quizzes : S.quizzes.filter((z) => z.is_open).length}</span><span><b>Notifications</b> ${st.push_players != null ? st.push_players + " / " + S.players.length + " joueurs" : "—"}</span></div>`;
     return `<h1>Espace organisateur</h1>${bar}
       <div class="chips" role="group" aria-label="Sections">${tabs.map(([k, l]) => `<button class="chip" data-action="admin-sec" data-sec="${k}" aria-pressed="${cur === k}">${l}</button>`).join("")}</div>
       ${secs[cur] || ""}<button class="btn ghost" data-action="tab" data-tab="score">Quitter l'espace organisateur</button>`;
+  }
+  function gamesAdminHTML() {
+    const g = S.admin.games;
+    if (!g) return '<p class="muted">Lance 14_jeux.sql dans Supabase pour installer les jeux.</p>';
+    const m = g.mode || "", who = g.test ? (playerById(Number(g.test)) || {}).first_name : null;
+    const state = m === "on" ? "<b>Jeux ouverts</b> pour tout le monde." : m === "test" ? `<b>Test</b> : seulement ${esc(who || "?")} voit l'onglet. Rien n'est enregistré.` : "Jeux fermés.";
+    const optP = S.players.map((p) => `<option value="${p.id}" ${(g.test ? String(p.id) === String(g.test) : S.me && p.id === S.me.id) ? "selected" : ""}>Test : seulement ${esc(p.first_name)}</option>`).join("");
+    const best = (g.best || []).map((b) => `${b.game === "routeur" ? "Routeur" : "Amarre"} : ${esc(b.name)}, ${b.score}`).join("<br>") || "Aucun record.";
+    const all = (g.scores || []).map((x) => `${x.game === "routeur" ? "Routeur" : "Amarre"} · ${esc(x.name)} : ${x.score}`).join("<br>");
+    return `<p class="log">${state}</p>
+      <div class="field"><label for="gm">Mode</label><select id="gm"><option value="" ${m === "" ? "selected" : ""}>Fermé</option><option value="on" ${m === "on" ? "selected" : ""}>Autorisé (tout le monde)</option><option value="test" ${m === "test" ? "selected" : ""}>Test (un seul joueur)</option></select></div>
+      <div class="field"><label for="gt">Pour le test</label><select id="gt">${optP}</select></div>
+      <button class="btn" data-action="set-games">Appliquer</button>
+      <h4 style="margin:14px 0 4px">Records</h4><div class="log">${best}</div>
+      ${all ? `<h4 style="margin:14px 0 4px">Meilleur score de chacun</h4><div class="log">${all}</div>` : ""}
+      <button class="btn ghost small" data-action="reset-games" style="margin-top:10px">Remettre les records à zéro</button>`;
   }
   function comAdminHTML() {
     const cm = S.admin.com, ev = (S.admin.pirate && S.admin.pirate.event) || {};
@@ -1011,6 +1037,67 @@
     else if (c.launched) msg = "Les riches redistribuent leurs points. Regarde l'onglet Patrimoine.";
     return `<div class="com-banner">${comFlag(40)}<div><b>Mode communiste${S.event.test ? " (test : toi seul le vois)" : ""}</b><span>${esc(msg)}</span></div>
       <button class="pir-music" data-action="music" aria-label="Musique">${Music.isOn() ? "♪" : "♪̸"}</button></div>`;
+  }
+  // ---------- Onglet Jeu : le routeur et le lancer d'amarre ----------
+  const GAMES = [
+    ["routeur", "Le routeur", "Choisis la route de Saint-Malo à Pointe-à-Pitre en évitant les dépressions, les baleines et les paquebots."],
+    ["amarre", "Le lancer d'amarre", "Passe le cordage sur le taquet. Chaque réussite rend le prochain lancer plus difficile."]
+  ];
+  function jeuHTML() {
+    const head = '<h1>Jeu</h1>';
+    if (!isGames()) return `${head}<p class="empty">Les jeux ne sont pas ouverts pour le moment.</p>`;
+    const g = S.games, test = g.mode === "test", open = S.jeu.open;
+    if (open) {
+      const def = GAMES.find((x) => x[0] === open);
+      return `${head}${test ? '<p class="jeu-test">Mode test : rien n\'est enregistré et aucun booster n\'est donné.</p>' : ""}
+        <div class="jeu-bar"><button class="btn ghost small" data-action="jeu-close">← Les jeux</button><b>${esc(def[1])}</b></div>
+        <iframe id="jf" class="jeu-frame" src="jeux/${open}.html" title="${esc(def[1])}" style="height:${S.jeu.h || 640}px"></iframe>`;
+    }
+    const cards = GAMES.map(([k, nm, txt]) => {
+      const x = (g.games && g.games[k]) || {};
+      const rec = x.score != null ? `Record : <b>${x.score}</b> par ${esc(x.holder || "?")}` : "Aucun record pour le moment";
+      const mine = x.mine != null ? ` · ton meilleur : <b>${x.mine}</b>` : "";
+      return `<div class="panel jeu-card"><h3>${esc(nm)}</h3><p class="muted">${esc(txt)}</p><p class="jeu-rec">${rec}${mine}</p>
+        <button class="btn" data-action="jeu-open" data-game="${k}">Jouer</button></div>`;
+    }).join("");
+    return `${head}${test ? '<p class="jeu-test">Mode test : tu es seul à voir les jeux. Rien n\'est enregistré et aucun booster n\'est donné.</p>' : ""}
+      <p class="muted" style="margin-bottom:12px">Bats le record d'un autre joueur et gagne un booster. Battre ton propre record ne rapporte rien.</p>${cards}`;
+  }
+  window.addEventListener("message", async (ev) => {
+    const d = ev.data;
+    if (!d || typeof d !== "object" || !d.rhum || S.tab !== "jeu" || !S.jeu.open) return;
+    const f = document.getElementById("jf");
+    if (!f || ev.source !== f.contentWindow) return;
+    if (d.rhum === "h") { const h = Math.max(400, Math.min(1800, Math.round(Number(d.h) || 640))); S.jeu.h = h; f.style.height = h + "px"; return; }
+    if (d.rhum === "score" && d.game === S.jeu.open) await submitGame(d.game, Math.round(Number(d.score)));
+  });
+  async function submitGame(game, score) {
+    if (!(score >= 0)) return;
+    let r;
+    try { r = await rpc("game_submit", { p_player: S.me.id, p_game: game, p_score: score }); } catch (e) { toast(e.message, true); return; }
+    if (S.games && S.games.games && S.games.games[game]) {
+      const x = S.games.games[game]; x.mine = r.mine;
+      if (r.mode === "on" && r.record) { x.score = r.score; x.holder = S.me.first_name; }
+    }
+    if (r.booster) showGameWin(game, r);
+    else if (r.record && r.mode === "on") toast(r.holder === S.me.first_name && r.score === r.best ? "C'est ton record." : "Score enregistré.");
+    else if (r.mode === "test" && r.record) toast("Test : record battu, booster à gagner en vrai.");
+  }
+  function showGameWin(game, r) {
+    const m = document.createElement("div");
+    m.className = "modal"; m.setAttribute("role", "dialog");
+    const nm = game === "routeur" ? "le routeur" : "le lancer d'amarre";
+    const test = r.mode === "test";
+    m.innerHTML = `<div class="modal-in"><h2>Record battu !</h2>
+      <p>Tu as fait ${r.score} points à ${nm}${r.holder && !test ? "" : ""}.</p>
+      <p>${test ? "En vrai, tu gagnerais un booster." : "Un booster t'attend dans l'onglet Boosters."}</p>
+      <button class="btn" id="gw-go">${test ? "Continuer" : "Voir mes boosters"}</button> <button class="btn ghost" id="gw-no">Continuer à jouer</button></div>`;
+    document.body.appendChild(m);
+    m.querySelector("#gw-no").addEventListener("click", () => m.remove());
+    m.querySelector("#gw-go").addEventListener("click", async () => {
+      m.remove(); if (test) return;
+      S.jeu.open = null; S.tab = "boosters"; try { await refresh(); } catch (e) {} render(); window.scrollTo(0, 0);
+    });
   }
   function maybeShowComIntro() {
     if (!isCom() || S.overlay || document.querySelector(".modal")) return;
@@ -1178,6 +1265,7 @@
     if (!S.me) return renderPicker();
     let inner;
     switch (S.tab) {
+      case "jeu": inner = jeuHTML(); break;
       case "pillage": inner = pillageHTML(); break;
       case "patrimoine": inner = patrimoineHTML(); break;
       case "quiz": inner = quizHTML(); break;
@@ -1284,7 +1372,7 @@
       S.tab = "album"; await doStreak(); await refresh(true); maybeInvite();
     },
     switch() { S.me = null; S.event = { mode: null }; S.letter = null; S.recap = []; Music.stop(); try { localStorage.removeItem("rhum_player"); localStorage.removeItem("rhum_pin"); } catch (e) {} S.run = null; render(); },
-    async tab(el) { S.tab = el.dataset.tab; S.run = null; render(); window.scrollTo(0, 0); if (S.tab === "patrimoine") { await loadCom(); render(); Music.start(); }
+    async tab(el) { S.tab = el.dataset.tab; S.run = null; S.jeu.open = null; render(); window.scrollTo(0, 0); if (S.tab === "patrimoine") { await loadCom(); render(); Music.start(); }
       if (S.tab === "marche" || S.tab === "pillage") { try { await loadMarket(); if (S.tab === "marche" || S.tab === "pillage") render(); } catch (e) {} } },
     filter(el) { S.filters[el.dataset.key] = el.dataset.val; render(); },
     "toggle-missing"() { S.filters.missing = !S.filters.missing; render(); },
@@ -1472,6 +1560,16 @@
         toast("Carte fétiche enregistrée."); await loadAdmin(); render();
       } catch (e) { toast(e.message, true); }
     },
+    async "jeu-open"(el) { S.jeu.open = el.dataset.game; S.jeu.h = 640; render(); window.scrollTo(0, 0); },
+    async "jeu-close"() { S.jeu.open = null; try { await refresh(); } catch (e) {} render(); },
+    async "set-games"() {
+      const mode = document.getElementById("gm").value, tp = document.getElementById("gt").value;
+      try { await rpc("admin_games_set", { p_code: S.adminCode, p_mode: mode, p_test_player: tp ? Number(tp) : null }); toast(mode === "on" ? "Jeux ouverts pour tout le monde." : mode === "test" ? "Jeux en test." : "Jeux fermés."); await loadAdmin(); await loadGames(); render(); } catch (e) { toast(e.message, true); }
+    },
+    async "reset-games"() {
+      if (!confirm("Remettre les records à zéro ?")) return;
+      try { await rpc("admin_games_reset", { p_code: S.adminCode, p_game: "" }); toast("Records remis à zéro."); await loadAdmin(); await loadGames(); render(); } catch (e) { toast(e.message, true); }
+    },
     async "set-event"() {
       const mode = document.getElementById("evm").value, tp = document.getElementById("evt").value, un = document.getElementById("evu").value;
       await rpc("admin_set_event", { p_code: S.adminCode, p_mode: mode, p_until: un ? new Date(un).toISOString() : null, p_test_player: tp ? Number(tp) : null });
@@ -1528,6 +1626,7 @@
     await rpc("admin_com_set", { p_code: S.adminCode, p_seuil: g("cs1"), p_pente: g("cs2") / 100, p_taux_max: g("cs3") / 100, p_plafond: g("cs4") / 100, p_malus: g("cs5"), p_heures: g("cs6") });
   }
   async function loadAdmin() {
+    try { S.admin.games = await rpc("admin_games_overview", { p_code: S.adminCode }); } catch (e) { S.admin.games = null; }
     try { S.admin.com = await rpc("admin_com_overview", { p_code: S.adminCode }); } catch (e) { S.admin.com = null; }
     try { S.admin.status = await rpc("admin_status", { p_code: S.adminCode }); } catch (e) { S.admin.status = null; }
     try { S.adminData = { fetish: await rpc("admin_fetish_list", { p_code: S.adminCode }) }; } catch (e) { S.adminData = { fetish: [] }; }
@@ -1681,19 +1780,19 @@
     if (S.me) { maybeShowLetter(); maybeShowRecap(); }
     if (S.me) maybeInvite();
     setInterval(() => {
-      if (document.hidden || S.overlay || S.run || !S.me || S.tab === "admin") return;
+      if (document.hidden || S.overlay || S.run || !S.me || S.tab === "admin" || (S.tab === "jeu" && S.jeu.open)) return;
       if (S.tab === "patrimoine" && S.com && S.com.me && S.com.me.status === "open") return;
       refresh();
     }, 45000);
     setInterval(async () => {
-      if (document.hidden || !S.me || S.overlay || S.run || S.tab === "admin") return;
+      if (document.hidden || !S.me || S.overlay || S.run || S.tab === "admin" || (S.tab === "jeu" && S.jeu.open)) return;
       const sig = () => JSON.stringify(S.flash.map((f) => [f.id, f.winner_player]));
       const before = sig();
       try { await loadFlash(); } catch (e) { return; }
       if (sig() !== before) render();
     }, 15000);
     document.addEventListener("visibilitychange", () => {
-      if (!document.hidden && S.me && !S.overlay && !S.run && S.tab !== "admin") refresh();
+      if (!document.hidden && S.me && !S.overlay && !S.run && S.tab !== "admin" && !(S.tab === "jeu" && S.jeu.open)) refresh();
     });
   }
 
