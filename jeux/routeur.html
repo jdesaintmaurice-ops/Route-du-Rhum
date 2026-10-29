@@ -1,0 +1,265 @@
+<title>Le routeur</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+  /* Carte météo de nuit : l'océan est sombre, le vent porte la couleur (bleu faible, jaune moyen, rouge fort). */
+  :root {
+    --bg: #0f1a26; --panel: #162536; --line: #2a3f55; --ink: #e9eef5; --muted: #9fb0c3;
+    --accent: #f2b84b; --good: #6fd08c; --bad: #ff8a80; --sea: #0c1b2b; --land: #2c3b4a;
+    --display: "Barlow Condensed", "Arial Narrow", sans-serif; --body: "Barlow", system-ui, sans-serif;
+    color-scheme: dark;
+  }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 400 17px/1.5 var(--body);
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 40px; }
+  main { max-width: 760px; margin: 0 auto; display: grid; gap: 16px; }
+  h1 { font: 700 44px/0.95 var(--display); margin: 0; letter-spacing: .01em; }
+  h2 { font: 700 24px/1 var(--display); letter-spacing: .02em; margin: 0 0 8px; }
+  p { margin: 0; } .muted { color: var(--muted); font-size: 15px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  .quest { font: 600 22px/1.25 var(--display); }
+  button { font: 700 19px/1 var(--display); letter-spacing: .03em; border: 0; border-radius: 10px; padding: 13px 16px; background: var(--accent); color: #1b1303; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  button:disabled { opacity: .4; cursor: default; }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  #mapwrap { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--sea); touch-action: manipulation; }
+  svg#map { display: block; width: 100%; height: auto; cursor: crosshair; }
+  .time { font: 700 34px/1 var(--display); font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 14px; color: var(--muted); }
+  .legend i { display: inline-block; width: 22px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+  table { width: 100%; border-collapse: collapse; font-size: 16px; }
+  td, th { text-align: left; padding: 7px 8px 7px 0; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  th { color: var(--muted); font-weight: 600; font-size: 14px; }
+  .ok { color: var(--good); } .ko { color: var(--bad); }
+  .verdict { font: 700 28px/1.1 var(--display); }
+</style>
+
+<main>
+  <header>
+    <h1>Le routeur</h1>
+    <p class="quest" style="margin-top:12px">Saint-Malo, Pointe-à-Pitre : choisissez votre route.</p>
+    <div class="row" id="lvls" style="margin-top:12px"></div>
+    <p class="muted" id="lname" style="margin-top:8px"></p>
+  </header>
+
+  <section class="panel">
+    <div id="mapwrap"><svg id="map" viewBox="0 0 3300 2000" role="img" aria-label="Carte de l'Atlantique avec le vent"></svg></div>
+    <div style="margin-top:12px">
+      <label for="day" class="muted">Prévisions météo : jour <b id="dayl">0</b></label>
+      <input type="range" id="day" min="0" max="12" step="0.25" value="0">
+    </div>
+    <div class="legend" style="margin-top:8px">
+      <span><i style="background:#5aa9ff"></i>vent faible</span><span><i style="background:#f2d14b"></i>moyen</span><span><i style="background:#ff6a5e"></i>fort</span><span>Évitez baleines et paquebots</span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="row" style="justify-content:space-between">
+      <div><span class="muted">Points posés</span><div class="time"><span id="n">0</span> / <span id="mx">6</span></div></div>
+      <div id="clock" class="time" hidden>0 j 00 h</div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="undo" class="ghost">Annuler le dernier</button>
+      <button id="clear" class="ghost">Tout effacer</button>
+      <button id="go">Lancer la route</button>
+    </div>
+  </section>
+
+  <section id="res" class="panel" hidden>
+    <div id="verdict" class="verdict"></div>
+    <table style="margin-top:12px"><tbody id="tb"></tbody></table>
+    <p class="muted" id="note" style="margin-top:10px"></p>
+    <div class="row" style="margin-top:12px"><button id="next" hidden>Niveau suivant</button><button id="again" class="ghost">Réessayer</button></div>
+  </section>
+</main>
+
+<script>
+(function () {
+  // ---------- Monde (en milles nautiques) ----------
+  var W = 3300, H = 2000, S = { x: 3150, y: 120 }, G = { x: 80, y: 1880 };
+    function sm(a, b, x) { var t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
+  // Quatre niveaux : dépressions (position de départ, vitesse en milles/heure), zone de hautes pressions, objectif, bouée d'aide.
+  var LEVELS = [
+    { name: "Baleines", deps: [], hi: { x: 1750, y: 1000, r: 520 }, whales: [{ x: 1750, y: 1480 }, { x: 2450, y: 1170 }, { x: 1000, y: 1650 }], liners: [], target: 10.2, buoy: { x: 2830, y: 1446 }, max: 6 },
+    { name: "La dépression", deps: [{ x: 1300, y: 650, vx: 10, vy: 1 }], hi: { x: 1750, y: 1000, r: 520 }, whales: [{ x: 2500, y: 1300 }, { x: 1500, y: 1500 }], liners: [], target: 10, buoy: { x: 2658, y: 835 }, max: 6 },
+    { name: "Le rail", deps: [{ x: 700, y: 900, vx: 9, vy: 3 }], hi: { x: 1750, y: 1000, r: 520 }, whales: [{ x: 2300, y: 700 }], liners: [{ x: 3200, y: 900, vx: -14, vy: 3 }, { x: 600, y: 1300, vx: 14, vy: -4 }], target: 9, buoy: { x: 2373, y: 1011 }, max: 5 },
+    { name: "Tempête et trafic", deps: [{ x: 1000, y: 500, vx: 12, vy: 1 }, { x: 500, y: 1250, vx: 12, vy: 0 }], hi: { x: 1750, y: 1000, r: 400 }, whales: [{ x: 2300, y: 700 }, { x: 1900, y: 1000 }, { x: 1200, y: 1300 }, { x: 800, y: 1550 }], liners: [{ x: 3200, y: 1100, vx: -15, vy: -2 }, { x: 1500, y: 300, vx: 12, vy: 6 }, { x: 300, y: 1000, vx: 15, vy: 3 }], target: 9, buoy: { x: 2171, y: 408 }, max: 4 }
+  ];
+  var SC = LEVELS[0];
+  function linerAt(L, th) { return { x: L.x + L.vx * th, y: L.y + L.vy * th }; }
+  function depC(d, th) { return { x: d.x + d.vx * th, y: d.y + d.vy * th }; }
+  function windAt(x, y, th) {
+    var wn = 1 - sm(600, 900, y), wt = sm(1100, 1500, y), wm = Math.max(0, 1 - wn - wt);
+    var u = wn * 24 + wt * -14 + wm * -3, v = wn * 3 + wt * 14 + wm * 2;           // ouest au nord, alizés au sud, calme au milieu
+    var d = Math.hypot(x - SC.hi.x, y - SC.hi.y), f = 0.3 + 0.7 * sm(0, SC.hi.r, d); u *= f; v *= f; // anticyclone : peu de vent
+    SC.deps.forEach(function (D) {
+      var c = depC(D, th), dx = x - c.x, dy = y - c.y, r = Math.max(1, Math.hypot(dx, dy));
+      var s = r < 200 ? 48 * (r / 200) : 48 * Math.exp(-(r - 200) / 320);
+      u += s * dy / r; v += -s * dx / r;                                            // rotation inverse des aiguilles d'une montre
+    });
+    return { u: u, v: v, sp: Math.min(55, Math.hypot(u, v)) };
+  }
+  var POL = [[0, .15], [30, .2], [45, .4], [60, .68], [90, .95], [120, 1], [150, .96], [180, .8]];
+  function pol(a) { for (var i = 1; i < POL.length; i++) if (a <= POL[i][0]) { var a0 = POL[i - 1][0], p0 = POL[i - 1][1], a1 = POL[i][0], p1 = POL[i][1]; return p0 + (p1 - p0) * (a - a0) / (a1 - a0); } return .8; }
+
+  function simulate(wps) {
+    var pts = wps.concat([G]), x = S.x, y = S.y, t = 0, k = 0, out = [{ t: 0, x: x, y: y, sp: 0 }], core = 0, top = 0;
+    while (t < 24 * 25) {
+      var T = pts[k], dx = T.x - x, dy = T.y - y, dist = Math.hypot(dx, dy);
+      if (dist < (k === pts.length - 1 ? 35 : 45)) { if (k === pts.length - 1) { out.push({ t: t, x: T.x, y: T.y, sp: 0 }); return { done: true, t: t, out: out, core: core, top: top }; } k++; continue; }
+      var hx = dx / dist, hy = dy / dist, w = windAt(x, y, t), twa = 0;
+      if (w.sp > 0.01) twa = Math.acos(Math.max(-1, Math.min(1, (hx * -w.u + hy * -w.v) / w.sp))) * 180 / Math.PI;
+      var sp = Math.min(34, Math.max(3, w.sp * 1.45)) * pol(twa);
+      if (w.sp > 34) sp *= Math.max(.2, 1 - (w.sp - 34) / 22);
+      sp = Math.max(1.5, sp);
+      SC.deps.forEach(function (D) { var c = depC(D, t); if (Math.hypot(x - c.x, y - c.y) < 200) core += 0.25; });
+      if (sp > top) top = sp;
+      x += hx * sp * 0.25; y += hy * sp * 0.25; t += 0.25;
+      var hit = null;
+      SC.whales.forEach(function (o) { if (Math.hypot(x - o.x, y - o.y) < 60) hit = "une baleine"; });
+      SC.liners.forEach(function (L) { var q = linerAt(L, t); if (Math.hypot(x - q.x, y - q.y) < 75) hit = "un paquebot"; });
+      if (hit) { out.push({ t: t, x: x, y: y, sp: 0 }); return { done: false, hit: hit, t: t, out: out, core: core, top: top }; }
+      if (Math.round(t * 4) % 8 === 0) out.push({ t: t, x: x, y: y, sp: sp });
+    }
+    return { done: false, t: t, out: out, core: core, top: top };
+  }
+  window.__rt = { simulate: simulate, windAt: windAt, lv: function (i) { SC = LEVELS[i]; }, L: LEVELS };
+
+  // ---------- Dessin de la carte ----------
+  var svg = document.getElementById("map"), NS = "http://www.w3.org/2000/svg";
+  var lv = 0, fails = [0, 0, 0, 0], won = [false, false, false, false], wps = [], boat = null, playing = false, simT = 0;
+  function windColor(sp) { return sp < 12 ? "#5aa9ff" : sp < 26 ? "#f2d14b" : "#ff6a5e"; }
+  function fmtT(h) { return Math.floor(h / 24) + " j " + String(Math.round(h % 24)).padStart(2, "0") + " h"; }
+
+  function arrows(th) {
+    var s = "";
+    for (var gy = 60; gy < H; gy += 150) for (var gx = 80; gx < W; gx += 150) {
+      var w = windAt(gx, gy, th), L = 18 + w.sp * 1.5, ang = Math.atan2(w.v, w.u) * 180 / Math.PI;
+      s += '<g transform="translate(' + gx + " " + gy + ") rotate(" + ang.toFixed(0) + ')"><path d="M' + (-L / 2) + " 0H" + (L / 2) + " M" + (L / 2 - 14) + " -9L" + (L / 2) + " 0L" + (L / 2 - 14) + ' 9" fill="none" stroke="' + windColor(w.sp) + '" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/></g>';
+    }
+    return s;
+  }
+  function swirl(th) { return SC.deps.map(function (D) { return swirl1(D, th); }).join(""); }
+  function swirl1(D, th) {
+    var c = depC(D, th), p = "";
+    for (var a = 0; a < 5.5 * Math.PI; a += 0.25) { var r = 12 + a * 14; p += (a ? "L" : "M") + (c.x + r * Math.cos(-a)).toFixed(0) + " " + (c.y + r * Math.sin(-a)).toFixed(0); }
+    return '<circle cx="' + c.x + '" cy="' + c.y + '" r="200" fill="rgba(255,106,94,.10)" stroke="#ff6a5e" stroke-width="5" stroke-dasharray="22 14"/><path d="' + p + '" fill="none" stroke="#ff6a5e" stroke-width="5" opacity=".7"/>' +
+      '<text x="' + c.x + '" y="' + (c.y - 235) + '" fill="#ff8a80" font-size="70" font-family="Barlow Condensed, sans-serif" font-weight="700" text-anchor="middle" letter-spacing="3">DÉPRESSION</text>';
+  }
+  function path(pts, col, dash, w) {
+    if (!pts.length) return "";
+    return '<polyline points="' + pts.map(function (p) { return Math.round(p.x) + "," + Math.round(p.y); }).join(" ") + '" fill="none" stroke="' + col + '" stroke-width="' + (w || 9) + '" stroke-linejoin="round" stroke-linecap="round"' + (dash ? ' stroke-dasharray="' + dash + '"' : "") + "/>";
+  }
+  function draw(th) {
+    var s = "";
+    // terres : Europe en haut à droite, Antilles en bas à gauche
+    s += '<path d="M3300 0H2950C3000 80 3070 90 3110 150C3140 230 3100 330 3180 420C3230 470 3300 480 3300 520Z" fill="var(--land)"/>';
+    s += '<path d="M0 1740C70 1750 130 1800 120 1870C110 1940 60 1990 0 2000Z" fill="var(--land)"/><ellipse cx="260" cy="1790" rx="46" ry="24" fill="var(--land)"/><ellipse cx="170" cy="1960" rx="40" ry="20" fill="var(--land)"/>';
+    // anticyclone
+    s += '<circle cx="' + SC.hi.x + '" cy="' + SC.hi.y + '" r="' + SC.hi.r + '" fill="rgba(90,169,255,.06)" stroke="#5aa9ff" stroke-width="4" stroke-dasharray="6 16"/><text x="' + SC.hi.x + '" y="' + (SC.hi.y + 15) + '" fill="#7fb8ff" font-size="64" font-family="Barlow Condensed, sans-serif" font-weight="700" text-anchor="middle" letter-spacing="3" opacity=".9">ANTICYCLONE</text>';
+    s += arrows(th) + swirl(th);
+    if (fails[lv] >= 2 && !won[lv]) {
+      var B = SC.buoy; s += '<g transform="translate(' + B.x + " " + B.y + ')"><circle r="46" fill="none" stroke="#ff8a3d" stroke-width="8" stroke-dasharray="14 10"/><circle r="22" fill="#ff8a3d"/><circle r="9" fill="#fff"/></g>';
+    }
+    SC.whales.forEach(function (o) { s += '<g transform="translate(' + o.x + " " + o.y + ')"><ellipse rx="52" ry="26" fill="#6b8aa6" stroke="#0c1b2b" stroke-width="5"/><path d="M48 0L90 -26L82 0L90 26Z" fill="#6b8aa6" stroke="#0c1b2b" stroke-width="5" stroke-linejoin="round"/><circle cx="-28" cy="-6" r="5" fill="#0c1b2b"/><path d="M-6 -26Q-6 -62 -26 -70M-6 -26Q-6 -62 14 -70" fill="none" stroke="#b9dcff" stroke-width="5" stroke-linecap="round"/></g>'; });
+    SC.liners.forEach(function (L) {
+      var q = linerAt(L, th), a = Math.atan2(L.vy, L.vx) * 180 / Math.PI;
+      var tr = ""; for (var k = 1; k <= 12; k++) { var u = linerAt(L, th + k * 6); tr += (k > 1 ? "L" : "M") + u.x.toFixed(0) + " " + u.y.toFixed(0); }
+      s += '<path d="' + tr + '" fill="none" stroke="#d9e2ec" stroke-width="4" stroke-dasharray="4 14" opacity=".55"/>';
+      s += '<g transform="translate(' + q.x.toFixed(0) + " " + q.y.toFixed(0) + ') rotate(' + a.toFixed(0) + ')"><path d="M-80 -30H50L90 0L50 30H-80Z" fill="#e9eef5" stroke="#0c1b2b" stroke-width="5" stroke-linejoin="round"/><rect x="-50" y="-18" width="70" height="36" rx="6" fill="#c0392b"/><rect x="-20" y="-10" width="18" height="20" fill="#fff"/></g>';
+    });
+    // trajet simulé, coloré par la vitesse
+    if (boat) {
+      for (var i = 1; i < boat.out.length; i++) {
+        var a = boat.out[i - 1], b = boat.out[i]; if (b.t > simT) break;
+        s += '<line x1="' + a.x.toFixed(0) + '" y1="' + a.y.toFixed(0) + '" x2="' + b.x.toFixed(0) + '" y2="' + b.y.toFixed(0) + '" stroke="' + (b.sp < 9 ? "#ff6a5e" : b.sp < 18 ? "#f2d14b" : "#6fd08c") + '" stroke-width="14" stroke-linecap="round"/>';
+      }
+    }
+    if (!boat) s += path([S].concat(wps, [G]), "#f2b84b", "", 8);
+    wps.forEach(function (p, i) { s += '<circle cx="' + p.x + '" cy="' + p.y + '" r="40" fill="#f2b84b" stroke="#1b1303" stroke-width="6"/><text x="' + p.x + '" y="' + (p.y + 17) + '" font-size="48" font-weight="700" text-anchor="middle" fill="#1b1303" font-family="Barlow Condensed, sans-serif">' + (i + 1) + "</text>"; });
+    s += '<circle cx="' + S.x + '" cy="' + S.y + '" r="34" fill="#6fd08c" stroke="#0c1b2b" stroke-width="6"/><text x="' + (S.x - 50) + '" y="' + (S.y + 75) + '" font-size="58" fill="#6fd08c" text-anchor="end" font-family="Barlow Condensed, sans-serif" font-weight="700">SAINT-MALO</text>';
+    s += '<circle cx="' + G.x + '" cy="' + G.y + '" r="34" fill="#ff6a5e" stroke="#0c1b2b" stroke-width="6"/><text x="' + (G.x + 50) + '" y="' + (G.y - 30) + '" font-size="58" fill="#ff8a80" font-family="Barlow Condensed, sans-serif" font-weight="700">POINTE-À-PITRE</text>';
+    if (boat && simT > 0) {
+      var p = at(boat.out, simT);
+      s += '<g transform="translate(' + p.x.toFixed(0) + " " + p.y.toFixed(0) + ') rotate(' + p.ang.toFixed(0) + ')"><path d="M-46 -26L52 0L-46 26L-26 0Z" fill="#fff" stroke="#0c1b2b" stroke-width="6" stroke-linejoin="round"/></g>';
+    }
+    svg.innerHTML = s;
+  }
+  function at(out, t) {
+    for (var i = 1; i < out.length; i++) if (out[i].t >= t) {
+      var a = out[i - 1], b = out[i], f = (t - a.t) / Math.max(0.001, b.t - a.t);
+      return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, ang: Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI };
+    }
+    var l = out[out.length - 1]; return { x: l.x, y: l.y, ang: 0 };
+  }
+
+  // ---------- Interactions ----------
+  var day = document.getElementById("day"), dayl = document.getElementById("dayl");
+  function refresh() {
+    document.getElementById("n").textContent = wps.length; document.getElementById("mx").textContent = SC.max;
+    document.getElementById("undo").disabled = !wps.length || playing || !!boat;
+    document.getElementById("clear").disabled = !wps.length || playing || !!boat;
+    document.getElementById("go").disabled = playing || !!boat;
+    var th = playing ? simT : parseFloat(day.value) * 24;
+    dayl.textContent = (th / 24).toFixed(1).replace(".", ",");
+    draw(th);
+  }
+  svg.addEventListener("pointerdown", function (e) {
+    if (playing || boat || wps.length >= SC.max) return;
+    var r = svg.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * W, y = (e.clientY - r.top) / r.height * H;
+    if (Math.hypot(x - S.x, y - S.y) < 80 || Math.hypot(x - G.x, y - G.y) < 80) return;
+    wps.push({ x: Math.round(x), y: Math.round(y) }); refresh();
+  });
+  day.addEventListener("input", refresh);
+  document.getElementById("undo").onclick = function () { wps.pop(); refresh(); };
+  document.getElementById("clear").onclick = function () { wps = []; refresh(); };
+  document.getElementById("go").onclick = function () {
+    var res = simulate(wps); boat = res; playing = true; simT = 0;
+    document.getElementById("clock").hidden = false; document.getElementById("res").hidden = true;
+    var last = performance.now(), end = res.t;
+    function frame(now) {
+      simT += (now - last) / 1000 * 18; last = now;
+      if (simT >= end) { simT = end; playing = false; finish(res); }
+      document.getElementById("clock").textContent = fmtT(simT);
+      document.getElementById("dayl").textContent = (simT / 24).toFixed(1).replace(".", ",");
+      draw(simT); refresh2();
+      if (playing) requestAnimationFrame(frame);
+    }
+    refresh2(); requestAnimationFrame(frame);
+  };
+  function refresh2() { document.getElementById("undo").disabled = true; document.getElementById("clear").disabled = true; document.getElementById("go").disabled = true; }
+  function finish(res) {
+    var d = res.t / 24, ok = res.done && d <= SC.target;
+    var pts = ok ? (lv + 1) * 1000 + Math.round((SC.target - d) * 200) : 0;
+    if (ok) { won[lv] = true; if (window.rhumScore) window.rhumScore("routeur", pts); } else fails[lv]++;
+    document.getElementById("verdict").innerHTML = ok ? '<span class="ok">Réussi.</span>' : res.hit ? '<span class="ko">Collision avec ' + res.hit + '.</span>' : '<span class="ko">Raté.</span>';
+    document.getElementById("tb").innerHTML = "<tr><td>Votre route</td><td>" + (res.done ? fmtT(res.t) : res.hit ? "stoppé à " + fmtT(res.t) : "pas arrivé") + "</td></tr><tr><td>Objectif</td><td>moins de " + fmtT(SC.target * 24) + "</td></tr>";
+    document.getElementById("again").textContent = "Réessayer";
+    var nx = document.getElementById("next"); nx.hidden = !(ok && lv < 3);
+    document.getElementById("note").textContent = ok ? "Score : " + pts + (lv === 3 ? ". Les quatre niveaux sont passés." : "") : "";
+    document.getElementById("res").hidden = false; document.getElementById("clock").hidden = true;
+    tabs(); draw(simT);
+  }
+  function setLevel(i) { lv = i; SC = LEVELS[i]; boat = null; wps = []; simT = 0; day.value = 0; document.getElementById("res").hidden = true; document.getElementById("clock").hidden = true; tabs(); refresh(); }
+  function tabs() {
+    document.getElementById("lvls").innerHTML = LEVELS.map(function (L, i) { return '<button class="' + (i === lv ? "" : "ghost") + '" data-l="' + i + '">' + (i + 1) + (won[i] ? " ✓" : "") + "</button>"; }).join("");
+    document.getElementById("lname").textContent = SC.name + " · objectif moins de " + fmtT(SC.target * 24);
+  }
+  document.getElementById("lvls").addEventListener("click", function (e) { var b = e.target.closest("button"); if (b && !playing) setLevel(+b.dataset.l); });
+  document.getElementById("next").onclick = function () { setLevel(lv + 1); };
+  document.getElementById("again").onclick = function () { setLevel(lv); };
+  tabs(); refresh();
+})();
+</script>
+<script>
+// Dans l'app : le jeu envoie son score et sa hauteur à la page qui l'affiche. Seul, il ne fait rien de plus.
+(function () {
+  if (window.parent === window) return;
+  window.rhumScore = function (g, s) { parent.postMessage({ rhum: "score", game: g, score: s }, "*"); };
+  function h() { parent.postMessage({ rhum: "h", h: document.documentElement.scrollHeight }, "*"); }
+  try { new ResizeObserver(h).observe(document.body); } catch (e) {}
+  h();
+})();
+</script>
