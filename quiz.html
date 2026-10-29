@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Quiz du bandeau</title>
+<title>Quiz final n°1</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <style>
 :root {
-  --bg: #171614; --panel: #23211f; --fg: #f0ede6; --soft: #a8a499; --line: #3a3733; --accent: #e5554d; --accent-fg: #1a0907;
+  --bg: #171614; --panel: #23211f; --fg: #f0ede6; --soft: #a8a499; --line: #3a3733; --accent: #e5554d; --accent-fg: #1a0907; --gold: #f2c14e;
   --display: "Oswald", "Arial Narrow", sans-serif; --body: "Source Sans 3", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
   color-scheme: dark;
 }
@@ -16,39 +16,60 @@
 body { margin: 0; background: var(--bg); color: var(--fg); font: 400 17px/1.45 var(--body); padding: 20px 16px 40px; }
 main { max-width: 640px; margin: 0 auto; display: grid; gap: 16px; transition: max-width .5s ease; }
 main.wide { max-width: 1000px; }
-header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+body.emb header { padding-right: 52px; }
+header { display: flex; align-items: baseline; gap: 12px; }
 h1 { font: 700 26px/1 var(--display); text-transform: uppercase; letter-spacing: .04em; margin: 0; }
-.tc { font: 500 14px var(--mono); color: var(--soft); margin-left: auto; }
+.tc { font: 500 13px var(--mono); color: var(--soft); margin-left: auto; white-space: nowrap; }
+.son { white-space: nowrap; }
+@media (max-width: 460px) { h1 { font-size: 20px; } }
 .son { font: 500 13px var(--mono); color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; cursor: pointer; }
-.son:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.son:focus-visible, .choice:focus-visible, .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
 .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
 .stage { display: grid; gap: 16px; }
 .screen { background: #000; border-radius: 10px; overflow: hidden; line-height: 0; }
 .screen img { width: 100%; height: auto; display: block; }
-.screen .note { line-height: 1.4; padding: 16px; }
 .screen iframe { width: 100%; aspect-ratio: 16 / 9; border: 0; display: block; }
+.screen .note { line-height: 1.4; padding: 16px; }
 .q { font: 700 44px/1 var(--display); text-transform: uppercase; letter-spacing: .06em; margin: 0; text-align: center; color: var(--accent); }
 .choices { display: grid; gap: 10px; }
 .choice { font: 600 17px/1.3 var(--body); text-align: left; color: var(--fg); background: var(--panel); border: 2px solid var(--line); border-radius: 10px; padding: 14px 16px; cursor: pointer; min-height: 52px; }
 .choice:hover { border-color: var(--accent); }
-.choice:focus-visible, .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .fade { animation: fade .5s ease both; }
 @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .btn { font: 700 18px var(--display); text-transform: uppercase; letter-spacing: .05em; border-radius: 10px; padding: 14px 18px; cursor: pointer; text-align: center; width: 100%; border: 2px solid var(--accent); background: var(--accent); color: var(--accent-fg); }
-.titre { font: 700 24px/1.15 var(--display); text-transform: uppercase; letter-spacing: .03em; margin: 0; }
+.btn:disabled { background: var(--line); border-color: var(--line); color: var(--soft); cursor: not-allowed; }
+.titre { font: 700 24px/1.15 var(--display); text-transform: uppercase; letter-spacing: .08em; margin: 0; color: var(--gold); }
 .note { color: var(--soft); font-size: 15px; margin: 0; }
 .note a { color: #7cc4ff; }
-.score { font: 700 72px/1 var(--display); margin: 0; }
+.score { font: 700 72px/1 var(--display); margin: 0; text-align: center; }
 .recap { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .recap li { display: flex; justify-content: space-between; gap: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
 .ok { color: #6fd08c; font-weight: 700; } .ko { color: #f08a83; font-weight: 700; }
-@media (prefers-reduced-motion: reduce) { .fade { animation: none; } main { transition: none; } }
+.credit { color: var(--soft); font-size: 14px; text-align: center; margin: 0; }
+
+/* Scène du présentateur */
+.plateau { position: relative; border-radius: 14px; overflow: hidden; padding: 14px 14px 0; min-height: 430px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px;
+  background: radial-gradient(circle at 20% 15%, rgba(242,193,78,.35), transparent 45%), radial-gradient(circle at 85% 30%, rgba(242,193,78,.25), transparent 40%), linear-gradient(#2a1c10, #120c07); }
+.plateau .etoile { position: absolute; width: 10px; height: 10px; background: var(--gold); clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); opacity: .8; animation: scint 1.8s ease-in-out infinite; }
+@keyframes scint { 0%, 100% { opacity: .25; transform: scale(.7); } 50% { opacity: 1; transform: scale(1.2); } }
+.bulle { position: relative; width: 100%; background: #fff; color: #1d1c1a; border-radius: 16px; padding: 14px 16px; display: grid; gap: 8px; font-weight: 600; z-index: 1; }
+.bulle p { margin: 0; }
+.bulle::after { content: ""; position: absolute; left: 50%; bottom: -12px; width: 22px; height: 22px; background: #fff; transform: translateX(-50%) rotate(45deg); }
+.animateur { width: 230px; max-width: 70%; height: auto; display: block; margin: 8px auto 0; transform-origin: 50% 100%; position: relative; z-index: 1; }
+.salue { animation: balance 1.6s ease-in-out infinite alternate; }
+@keyframes balance { from { transform: rotate(-1.5deg); } to { transform: rotate(1.5deg); } }
+.danse { animation: danse .6s ease-in-out infinite alternate; }
+@keyframes danse { from { transform: translateY(0) rotate(-3.5deg); } to { transform: translateY(-14px) rotate(3.5deg); } }
+.bandeau { display: grid; gap: 2px; background: #1d2a5c; color: #fff; border-left: 6px solid var(--accent); border-radius: 4px; padding: 8px 12px; }
+.bandeau b { font: 700 18px/1.2 var(--display); text-transform: uppercase; letter-spacing: .04em; }
+.bandeau span { font: 600 15px/1.25 var(--body); color: #dfe4f7; }
+@media (prefers-reduced-motion: reduce) { .fade, .etoile, .salue, .danse { animation: none; } main { transition: none; } }
 </style>
 </head>
 <body>
 <main id="main">
-  <header><h1>Quiz du bandeau</h1><span class="tc" id="tc"></span><button type="button" id="son" class="son" aria-pressed="true">Son : oui</button></header>
+  <header><h1>Quiz final n°1</h1><span class="tc" id="tc"></span><button type="button" id="son" class="son" aria-pressed="true">Son : oui</button></header>
   <div class="bar"><i id="prog"></i></div>
   <div id="app" class="stage"></div>
 </main>
@@ -56,84 +77,151 @@ h1 { font: 700 26px/1 var(--display); text-transform: uppercase; letter-spacing:
 <script>
 /* ===== Réglages ===== */
 var DELAI_IMAGE = 2000;      // durée de l'image barrée seule (ms)
-var DELAI_VOIR = 3000;       // attente avant le bouton « Voir » (ms)
-var MELANGER_QUESTIONS = true;
-var MUSIQUE = "musique.mp3";  // fichier à mettre à côté de quiz.html
+var ATTENTE_SUIVANT = 10;    // secondes avant de pouvoir passer à la question suivante
+var MUSIQUE = "musique.mp3"; // fichier à mettre à côté de quiz.html
+var EMB = /[?&]emb=1/.test(location.search); // ouvert depuis l'application (le score est alors envoyé à l'appli)
+if (EMB) document.body.classList.add("emb");
 
-/* Adresse d'incrustation des vidéos INA. Si ça n'affiche rien, change seulement cette fonction.
-   Variantes à essayer : "https://player-hub.ina.fr/embed/" + id.toLowerCase()
-                          "https://player.ina.fr/player/embed/" + id + "/1/1b0bd203fbcd702f9bc9b10ac3d0fc21/wide/1" */
-function inaEmbed(id) { return "https://player-hub.ina.fr/embed/" + id; }
+/* Adresse d'incrustation des vidéos INA : si rien ne s'affiche, ne change que cette fonction.
+   debut = seconde de départ (le paramètre « start » est tenté ; s'il est ignoré, la page rappelle l'heure à laquelle avancer). */
+function inaEmbed(id, debut) { return "https://player-hub.ina.fr/embed/" + id + "?autoplay=1&start=" + debut; }
 
-/* ===== Questions =====
-   img   : nom de base des images dans img/quiz/ (NOM-masque.jpg et NOM-plein.jpg)
-   bonne / faux : la bonne réponse et les deux fausses
-   video : null (pas de vidéo), { yt: "ID YouTube" } ou { ina: "Media ID", page: "adresse de la page INA" }
-   Pour ajouter une question : copier un bloc, ajouter les deux images dans img/quiz/. */
-var QUESTIONS = [
-  { img: "barnier", bonne: "Michel Barnier", faux: ["Michel Rocard", "Michel Noir"],
-    sujet: "1971 : Michel Barnier, 20 ans et déjà impliqué", video: { yt: "MmM8GKj5lyE", page: "https://www.youtube.com/watch?v=MmM8GKj5lyE" } },
-  { img: "twirling", bonne: "Professeure de Twirling Bâton, « On a testé : Le Twirling »",
-    faux: ["Professeure de Majorettes, « On a testé : Les Majorettes »", "Entraîneuse de Gymnastique rythmique, « On a testé : La Gym rythmique »"],
-    sujet: "On a mouillé le maillot : le twirling",
-    video: { ina: "G3956346_001_031", page: "https://www.ina.fr/ina-eclaire-actu/video/g3956346_001_031/on-a-mouille-le-maillot-le-twirling" } },
-  { img: "biere", bonne: "brasseur amateur", faux: ["cidriculteur amateur", "vigneron amateur"],
-    sujet: "Fabrique ta bière toi-même",
-    video: { ina: "LL00001246912", page: "https://www.ina.fr/ina-eclaire-actu/video/ll00001246912/fabrique-ta-biere-toi-meme" } },
-  { img: "masseur", bonne: "Masseur de l'École de Danse de Paris",
-    faux: ["Kinésithérapeute de l'Opéra de Lyon", "Entraîneur de l'équipe de France de gymnastique"],
-    sujet: "Kader Belarbi",
-    video: { ina: "CAB90006176", page: "https://www.ina.fr/ina-eclaire-actu/video/cab90006176/kader-belarbi" } },
-  { img: "calculatrice", bonne: "Responsable calculatrices, Papeterie Lamartine",
-    faux: ["Responsable informatique, Librairie du Lycée", "Responsable rayon scolaire, Papeterie Centrale"],
+/* ===== Banque de questions =====
+   img   : nom de base des images dans img/quiz/ (NOM-masque.jpg)
+   bonne / faux : bonne réponse et fausses réponses
+   video : { ina: "Media ID", debut: secondes, page: "adresse de la page INA" } ou { yt: "ID YouTube", debut: secondes, page: "…" }
+   Les questions non utilisées restent ici pour un prochain quiz. */
+var BANQUE = {
+  tornade: { img: "tornade", bonne: "Chasseur de tornades", faux: ["Vendeur d'Auto-Tune", "Influenceur Waze"],
+    sujet: "Chasseurs de tornades",
+    video: { ina: "8496618_001_020", debut: 70, page: "https://www.ina.fr/ina-eclaire-actu/video/8496618_001_020/chasseurs-de-tornades-une-profession-qui-attire-de-plus-en-plus" } },
+  masseur: { img: "masseur", bonne: "Masseur de l'Opéra de Paris", faux: ["Passionné de chair et de cuisses humaines", "Champion régional de massage"],
+    sujet: "Le masseur",
+    video: { ina: "CAB90006176", debut: 344, page: "https://www.ina.fr/ina-eclaire-actu/video/cab90006176/kader-belarbi" } },
+  baton: { img: "twirling", bonne: "Professeure de bâton", faux: ["Vendeuse de cotons-tiges", "Pharmacienne spécialiste en tests PCR"],
+    sujet: "La professeure de bâton",
+    video: { ina: "G3956346_001_031", debut: 44, page: "https://www.ina.fr/ina-eclaire-actu/video/g3956346_001_031/on-a-mouille-le-maillot-le-twirling" } },
+  pretre: { img: "diacre", bonne: "Gardien du PSG", faux: ["Hipster", "Historien"],
+    sujet: "Le diacre",
+    video: { ina: "3299030001022", debut: 57, page: "https://www.ina.fr/ina-eclaire-actu/video/3299030001022/football-la-clericus-cup" } },
+
+  /* --- Pour un prochain quiz --- */
+  barnier: { img: "barnier", bonne: "Michel Barnier", faux: ["Michel Rocard", "Michel Noir"], sujet: "1971 : Michel Barnier, 20 ans et déjà impliqué",
+    video: { yt: "MmM8GKj5lyE", debut: 0, page: "https://www.youtube.com/watch?v=MmM8GKj5lyE" } },
+  biere: { img: "biere", bonne: "Brasseur amateur", faux: ["Cidriculteur amateur", "Vigneron amateur"], sujet: "Fabrique ta bière toi-même",
+    video: { ina: "LL00001246912", debut: 0, page: "https://www.ina.fr/ina-eclaire-actu/video/ll00001246912/fabrique-ta-biere-toi-meme" } },
+  calculatrice: { img: "calculatrice", bonne: "Responsable calculatrices, Papeterie Lamartine", faux: ["Responsable informatique, Librairie du Lycée", "Responsable rayon scolaire, Papeterie Centrale"],
     sujet: "Baccalauréat : attention à la triche sur calculatrices",
-    video: { ina: "3102349001017", page: "https://www.ina.fr/ina-eclaire-actu/video/3102349001017/baccalaureat-attention-a-la-triche-sur-calculatrices" } },
-  { img: "marini", bonne: "Comédienne", faux: ["Maquilleuse", "Costumière"], sujet: "Marilu Marini, groupe TSE", video: null },
-  { img: "irradie", bonne: "Un employé irradié", faux: ["Un employé licencié", "Un employé rescapé"], sujet: "Un employé irradié", video: null },
-  { img: "tornade", bonne: "Chasseur de tornades, fondateur de l'", faux: ["Météorologue, directeur de l'", "Journaliste, rédacteur en chef de l'"],
-    sujet: "Chasseurs de tornades : une profession qui attire de plus en plus",
-    video: { ina: "8496618_001_020", page: "https://www.ina.fr/ina-eclaire-actu/video/8496618_001_020/chasseurs-de-tornades-une-profession-qui-attire-de-plus-en-plus" } },
-  { img: "kasparian", bonne: "Coadjuteur du Patriarche arménien d'Istanbul",
-    faux: ["Évêque de l'Église orthodoxe de Jérusalem", "Archimandrite du monastère de Sainte-Catherine"],
-    sujet: "Vartalet Chenork Kasparian", video: null },
-  { img: "diacre", bonne: "Gardien du P.S.G.", faux: ["Capitaine du Vatican FC", "Attaquant du séminaire de Saint-Sulpice"],
-    sujet: "Football : la Clericus Cup",
-    video: { ina: "3299030001022", page: "https://www.ina.fr/ina-eclaire-actu/video/3299030001022/football-la-clericus-cup" } },
-  { img: "sorcier", bonne: "Sorcier", faux: ["Marabout", "Astrologue"], sujet: "Le sorcier qui part dans l'astral",
-    video: { ina: "VDD10011537", page: "https://www.ina.fr/ina-eclaire-actu/video/vdd10011537/le-sorcier-qui-part-dans-l-astral" } }
+    video: { ina: "3102349001017", debut: 0, page: "https://www.ina.fr/ina-eclaire-actu/video/3102349001017/baccalaureat-attention-a-la-triche-sur-calculatrices" } },
+  marini: { img: "marini", bonne: "Comédienne", faux: ["Maquilleuse", "Costumière"], sujet: "Marilu Marini, groupe TSE", video: null },
+  irradie: { img: "irradie", bonne: "Un employé irradié", faux: ["Un employé licencié", "Un employé rescapé"], sujet: "Un employé irradié", video: null },
+  kasparian: { img: "kasparian", bonne: "Coadjuteur du Patriarche arménien d'Istanbul", faux: ["Évêque de l'Église orthodoxe de Jérusalem", "Archimandrite du monastère de Sainte-Catherine"], sujet: "Vartalet Chenork Kasparian", video: null },
+  sorcier: { img: "sorcier", bonne: "Sorcier", faux: ["Marabout", "Astrologue"], sujet: "Le sorcier qui part dans l'astral",
+    video: { ina: "VDD10011537", debut: 0, page: "https://www.ina.fr/ina-eclaire-actu/video/vdd10011537/le-sorcier-qui-part-dans-l-astral" } }
+};
+/* Questions de ce quiz, dans l'ordre */
+var ORDRE = ["tornade", "masseur", "baton", "pretre"];
+var QUESTIONS = ORDRE.map(function (k) { return BANQUE[k]; });
+
+/* Paroles du présentateur : pose = salue / danse */
+var PAGES = [
+  { pose: "salue", txt: ["Saaaluuut, c'est Nikooos !", "Bienvenue pour le quiz final ! Enfin, je veux dire le premier quiz final."], btn: "Suite" },
+  { pose: "danse", txt: ["Les règles sont simples et assez éloignées du jeu de la Route du Rhum.", "Vous allez voir des images issues de la télé."], btn: "Suite" },
+  { pose: "danse", txt: ["Chaque personne interrogée a un titre qui la qualifie. Par exemple, si Manu passait à la télé, ce serait :"], bandeau: ["Manu", "Bon dernier au jeu Rhumnini"], apres: "À vous de deviner le titre caché.", btn: "Suite" },
+  { pose: "danse", txt: ["Une seule réponse possible. Analysez bien les images, la réponse s'y cache parfois.", "À la fin, un beau booster à gagner.", "On respire, on se concentre, et c'est parti !"], btn: "C'est parti !" }
 ];
 
-/* ===== Déroulé ===== */
+/* ===== Outils ===== */
 var app = document.getElementById("app"), main = document.getElementById("main"), prog = document.getElementById("prog"), tc = document.getElementById("tc");
-var ordre = QUESTIONS.slice(), idx = 0, score = 0, results = [], timers = [];
-
-function clearTimers() { timers.forEach(clearTimeout); timers = []; }
+var idx = 0, score = 0, results = [], timers = [], fini = false;
+function clearTimers() { timers.forEach(function (t) { clearTimeout(t); clearInterval(t); }); timers = []; }
 function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
 function shuffle(a) { a = a.slice(); for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
 function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
-function head() { tc.textContent = "Question " + (idx + 1) + " / " + ordre.length; prog.style.width = (idx / ordre.length * 100) + "%"; }
+function head() { tc.textContent = "Question " + (idx + 1) + " / " + QUESTIONS.length; prog.style.width = (idx / QUESTIONS.length * 100) + "%"; }
+function mmss(s) { return Math.floor(s / 60) + " min " + String(s % 60).padStart(2, "0") + " s"; }
+
 /* Cherche l'image dans plusieurs dossiers au cas où le dossier n'est pas exactement au bon endroit. */
 var DOSSIERS = ["img/quiz/", "quiz/", "img/", "", "/img/quiz/"];
-function ecran(nom, alt, secours) {
-  var s = el("div", "screen"), i = el("img"), liste = [], k = 0;
-  DOSSIERS.forEach(function (d) { liste.push(d + nom); });
-  if (secours) DOSSIERS.forEach(function (d) { liste.push(d + secours); });
+function ecran(nom, alt) {
+  var s = el("div", "screen"), i = el("img"), k = 0;
   i.alt = alt;
   i.onerror = function () {
     k++;
-    if (k < liste.length) { i.src = liste[k]; return; }
+    if (k < DOSSIERS.length) { i.src = DOSSIERS[k] + nom; return; }
     i.onerror = null; i.removeAttribute("src");
     s.appendChild(el("p", "note", "Image introuvable : " + nom + ". Vérifie qu'elle est bien dans le dossier img/quiz du site."));
   };
-  i.src = liste[0]; s.appendChild(i); return s;
+  i.src = DOSSIERS[0] + nom; s.appendChild(i); return s;
 }
 
+/* ===== Musique de fond en boucle =====
+   Le navigateur n'autorise le son qu'après un geste : elle démarre au premier toucher. */
+var musique = new Audio(MUSIQUE); musique.loop = true; musique.volume = 0.5; musique.preload = "auto";
+var sonVoulu = true, musiqueLancee = false;
+var btnSon = document.getElementById("son");
+function majSon() { btnSon.textContent = sonVoulu ? "Son : oui" : "Son : non"; btnSon.setAttribute("aria-pressed", sonVoulu ? "true" : "false"); }
+function lancerMusique() {
+  if (musiqueLancee || !sonVoulu) return;
+  var p = musique.play();
+  if (p && p.then) p.then(function () { musiqueLancee = true; }, function () { /* fichier absent ou son refusé : nouvel essai au prochain toucher */ });
+  else musiqueLancee = true;
+}
+function pauseMusique() { musique.pause(); musiqueLancee = false; }
+["pointerdown", "keydown", "touchstart"].forEach(function (ev) { document.addEventListener(ev, lancerMusique, { passive: true }); });
+btnSon.addEventListener("click", function (e) {
+  e.stopPropagation(); sonVoulu = !sonVoulu;
+  if (sonVoulu) { musiqueLancee = false; if (!enVideo) lancerMusique(); } else pauseMusique();
+  majSon();
+});
+majSon();
+var enVideo = false;
+
+/* ===== Présentateur : image img/quiz/animateur.svg (elle bouge toute seule : clignement, bouche, bras) ===== */
+function animateur(pose) {
+  var i = el("img", "animateur " + (pose === "danse" ? "danse" : "salue")), k = 0;
+  i.alt = "Nikos, le présentateur"; i.draggable = false;
+  i.onerror = function () { k++; if (k < DOSSIERS.length) i.src = DOSSIERS[k] + "animateur.svg"; else i.onerror = null; };
+  i.src = DOSSIERS[0] + "animateur.svg"; return i;
+}
+function plateau(page) {
+  var p = el("div", "plateau fade");
+  [[8, 12], [86, 8], [14, 55], [92, 48], [50, 6], [78, 70]].forEach(function (c, i) { var s = el("span", "etoile"); s.style.left = c[0] + "%"; s.style.top = c[1] + "%"; s.style.animationDelay = (i * .3) + "s"; p.appendChild(s); });
+  var b = el("div", "bulle"); page.txt.forEach(function (t) { b.appendChild(el("p", "", t)); });
+  if (page.bandeau) { var d = el("div", "bandeau"); d.appendChild(el("b", "", page.bandeau[0])); d.appendChild(el("span", "", page.bandeau[1])); b.appendChild(d); }
+  if (page.apres) b.appendChild(el("p", "", page.apres));
+  p.appendChild(b);
+  p.appendChild(animateur(page.pose));
+  return p;
+}
+
+/* ===== Accueil ===== */
+function accueil() {
+  clearTimers(); app.textContent = ""; main.classList.remove("wide"); tc.textContent = ""; prog.style.width = "0";
+  app.appendChild(el("h2", "titre", "Mets la musique !"));
+  app.appendChild(el("p", "note", "Monte le son de ton téléphone ou de ton ordinateur et coupe le mode silencieux. La musique démarre dès que tu touches l'écran."));
+  var b = el("button", "btn", "Commencer"); b.type = "button"; b.addEventListener("click", function () { lancerMusique(); presentateur(0); }); app.appendChild(b);
+}
+function presentateur(n) {
+  clearTimers(); app.textContent = "";
+  var pg = PAGES[n];
+  app.appendChild(plateau(pg));
+  var b = el("button", "btn", pg.btn); b.type = "button";
+  b.addEventListener("click", function () { n + 1 < PAGES.length ? presentateur(n + 1) : depart(); });
+  app.appendChild(b);
+}
+
+/* ===== Questions ===== */
+function depart() { idx = 0; score = 0; results = []; fini = false; etape1(); }
+
+/* Étape 1 : l'image masquée seule, 2 secondes */
 function etape1() {
-  clearTimers(); var Q = ordre[idx];
-  main.classList.remove("wide"); app.textContent = ""; head();
+  clearTimers(); var Q = QUESTIONS[idx];
+  main.classList.remove("wide"); app.textContent = ""; head(); lancerMusique();
   var s = ecran(Q.img + "-masque.jpg", "Capture de la vidéo avec un bandeau masqué"); s.classList.add("fade"); app.appendChild(s);
   later(function () { etape2(Q); }, DELAI_IMAGE);
 }
+/* Étape 2 : « Qui ? » et trois réponses sous l'image */
 function etape2(Q) {
   var zone = el("div", "stage fade");
   zone.appendChild(el("p", "q", "Qui ?"));
@@ -145,67 +233,39 @@ function etape2(Q) {
   });
   zone.appendChild(box); app.appendChild(zone);
 }
+/* Étape 3 : la vidéo donne la réponse ; Suivant est bloqué quelques secondes */
 function etape3(Q) {
   clearTimers(); app.textContent = ""; main.classList.add("wide");
-  var s = ecran(Q.img + "-plein.jpg", "Capture de la vidéo, bandeau visible", Q.img + "-masque.jpg"); s.classList.add("fade"); app.appendChild(s);
-  var zone = el("div", "stage"); app.appendChild(zone);
-  later(function () {
-    var b = el("button", "btn fade", Q.video ? "Voir" : (idx + 1 < ordre.length ? "Question suivante" : "Voir mon score")); b.type = "button";
-    b.addEventListener("click", function () { Q.video ? etape5(Q) : suite(); });
-    zone.appendChild(b); b.focus();
-  }, DELAI_VOIR);
+  app.appendChild(el("h2", "titre", "Réponse"));
+  var v = Q.video;
+  if (v) {
+    pauseMusique(); enVideo = true;
+    var src = v.yt ? "https://www.youtube.com/embed/" + v.yt + "?autoplay=1&rel=0&start=" + v.debut : inaEmbed(v.ina, v.debut);
+    var s = el("div", "screen fade"), f = el("iframe"); f.src = src; f.title = "Vidéo : " + Q.sujet; f.allowFullscreen = true;
+    f.setAttribute("allow", "autoplay; fullscreen; encrypted-media; picture-in-picture"); s.appendChild(f); app.appendChild(s);
+    var n = el("p", "note", (v.debut ? "Extrait à partir de " + mmss(v.debut) + ". " : "") + "La vidéo ne s'affiche pas ? "), a = el("a", "", "L'ouvrir sur son site");
+    a.href = v.page; a.target = "_blank"; a.rel = "noopener"; n.appendChild(a); app.appendChild(n);
+  }
+  var b = el("button", "btn", ""); b.type = "button"; b.disabled = true;
+  var dernier = idx + 1 >= QUESTIONS.length, libelle = dernier ? "Voir mon score" : "Suivant";
+  var reste = v ? ATTENTE_SUIVANT : 0;
+  function maj() { if (reste > 0) b.textContent = libelle + " (" + reste + ")"; else { b.textContent = libelle; b.disabled = false; } }
+  maj();
+  if (reste > 0) { var t = setInterval(function () { reste--; maj(); if (reste <= 0) clearInterval(t); }, 1000); timers.push(t); }
+  b.addEventListener("click", function () { if (b.disabled) return; enVideo = false; idx++; idx < QUESTIONS.length ? etape1() : fin(); });
+  app.appendChild(b);
 }
-function etape5(Q) {
-  clearTimers(); app.textContent = ""; main.classList.add("wide");
-  app.appendChild(el("h2", "titre", Q.sujet));
-  var v = Q.video, src = v.yt ? "https://www.youtube.com/embed/" + v.yt + "?rel=0" : inaEmbed(v.ina);
-  var s = el("div", "screen"), f = el("iframe"); f.src = src; f.title = Q.sujet; f.allowFullscreen = true; f.setAttribute("allow", "fullscreen; autoplay; encrypted-media"); s.appendChild(f); app.appendChild(s);
-  var n = el("p", "note", "La vidéo ne s'affiche pas ? "), a = el("a", "", "L'ouvrir sur son site"); a.href = v.page; a.target = "_blank"; a.rel = "noopener"; n.appendChild(a); app.appendChild(n);
-  var b = el("button", "btn", idx + 1 < ordre.length ? "Question suivante" : "Voir mon score"); b.type = "button"; b.addEventListener("click", suite); app.appendChild(b);
-}
-function suite() { idx++; idx < ordre.length ? etape1() : fin(); }
+
+/* ===== Score final ===== */
 function fin() {
-  clearTimers(); app.textContent = ""; main.classList.remove("wide"); prog.style.width = "100%"; tc.textContent = "Terminé";
-  app.appendChild(el("p", "score", score + " / " + ordre.length));
+  clearTimers(); enVideo = false; app.textContent = ""; main.classList.remove("wide"); prog.style.width = "100%"; tc.textContent = "Terminé"; lancerMusique();
+  app.appendChild(el("p", "score", score + " / " + QUESTIONS.length));
   var ul = el("ul", "recap");
   results.forEach(function (h) { var li = el("li"); li.appendChild(el("span", "", h.sujet)); li.appendChild(el("b", h.ok ? "ok" : "ko", h.ok ? "Juste" : "Raté")); ul.appendChild(li); });
   app.appendChild(ul);
-  var r = el("button", "btn", "Rejouer"); r.type = "button"; r.addEventListener("click", depart); app.appendChild(r);
-}
-function depart() { ordre = MELANGER_QUESTIONS ? shuffle(QUESTIONS) : QUESTIONS.slice(); idx = 0; score = 0; results = []; etape1(); }
-
-/* ===== Musique de fond (en boucle) =====
-   Le navigateur n'autorise le son qu'après un geste de l'utilisateur : la musique démarre
-   donc au premier toucher ou clic n'importe où sur la page. */
-var musique = new Audio(MUSIQUE); musique.loop = true; musique.volume = 0.5; musique.preload = "auto";
-var sonVoulu = true, musiqueLancee = false;
-var btnSon = document.getElementById("son");
-function majSon() { btnSon.textContent = sonVoulu ? "Son : oui" : "Son : non"; btnSon.setAttribute("aria-pressed", sonVoulu ? "true" : "false"); }
-function lancerMusique() {
-  if (musiqueLancee || !sonVoulu) return;
-  var p = musique.play();
-  if (p && p.then) p.then(function () { musiqueLancee = true; }, function () { /* fichier absent ou son refusé : on réessaiera au prochain toucher */ });
-  else musiqueLancee = true;
-}
-["pointerdown", "keydown", "touchstart"].forEach(function (ev) { document.addEventListener(ev, lancerMusique, { passive: true }); });
-btnSon.addEventListener("click", function (e) {
-  e.stopPropagation(); sonVoulu = !sonVoulu;
-  if (sonVoulu) { musiqueLancee = false; lancerMusique(); } else { musique.pause(); musiqueLancee = false; }
-  majSon();
-});
-majSon();
-/* Si les vidéos ont du son, la musique couvre le début : on la coupe pendant la lecture d'une vidéo. */
-var etape5Origine = etape5;
-etape5 = function (Q) { musique.pause(); musiqueLancee = false; etape5Origine(Q); };
-var suiteOrigine = suite;
-suite = function () { suiteOrigine(); lancerMusique(); };
-
-/* ===== Écran d'accueil ===== */
-function accueil() {
-  clearTimers(); app.textContent = ""; main.classList.remove("wide"); tc.textContent = ""; prog.style.width = "0";
-  app.appendChild(el("h2", "titre", "Mets la musique !"));
-  app.appendChild(el("p", "note", "Monte le son de ton téléphone ou de ton ordinateur et coupe le mode silencieux. La musique démarre dès que tu touches l'écran."));
-  var b = el("button", "btn", "Commencer"); b.type = "button"; b.addEventListener("click", depart); app.appendChild(b);
+  app.appendChild(animateur("danse"));
+  app.appendChild(el("p", "note", EMB ? "Ton booster t'attend dans l'onglet Boosters." : "Pour gagner ton booster, joue depuis l'application de la Route du Rhum."));
+  if (EMB && !fini) { fini = true; try { parent.postMessage({ rhum: "quizscore", score: score, total: QUESTIONS.length }, "*"); } catch (e) {} }
 }
 accueil();
 </script>

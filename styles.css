@@ -519,3 +519,5 @@ body.communiste .tab { font-size: 12px; }
 .mk-h small { font: 400 13px var(--body); text-transform: none; letter-spacing: 0; color: var(--ink-soft); }
 .mk-sum { text-align: center; font: 800 20px var(--display); text-transform: uppercase; margin: 12px 0 10px; min-height: 24px; }
 .mk-compose .mk-picklist { max-height: 22vh; }
+.jeu-full.qf { background: #171614; }
+.jeu-full.qf iframe { background: #171614; }

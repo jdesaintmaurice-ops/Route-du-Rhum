@@ -233,7 +233,7 @@
     players: [], cards: [], mine: [], boosters: [], quizzes: [], questions: [],
     subs: [], drops: [], claims: [], scores: [], daily: [],
     filters: { cls: "all", rar: "all", missing: false },
-    run: null, overlay: false, adminCode: null, adminData: null, games: null, jeu: { open: null },
+    run: null, overlay: false, adminCode: null, adminData: null, games: null, qf: null, jeu: { open: null, qfDone: false },
     flash: [], myLevel: 3, hardSubs: [], streak: null, admin: { levels: [] },
     mk: { view: "search", playerId: null, q: "", decks: [], trades: [], loaded: false },
     event: { mode: null, test: false }, letter: null, recap: [], pil: { step: "code", info: null, picked: [], taken: null }
@@ -319,7 +319,9 @@
   async function loadGames() {
     try { S.games = S.me ? await rpc("games_state", { p_player: S.me.id }) : null; } catch (e) { S.games = null; }
     if (S.games && !S.games.mode) S.games = null;
-    if (!S.games && S.tab === "jeu") S.tab = "album";
+    try { S.qf = S.me ? await rpc("quizfinal_state", { p_player: S.me.id }) : null; } catch (e) { S.qf = null; }
+    if (S.qf && !S.qf.open) S.qf = null;
+    if (!isGames() && S.tab === "jeu") S.tab = "album";
   }
   async function loadCom() {
     try { S.com = await rpc("com_state", { p_player: S.me.id }); } catch (e) { S.com = null; }
@@ -337,7 +339,7 @@
   }
   let lastPing = 0;
   const pingAlerts = (force) => { if (!force && Date.now() - lastPing < 50000) return; lastPing = Date.now(); appPush({ check_raids: true, check_daily: true, check_com: true }); };
-  const isGames = () => !!(S.me && S.games && S.games.mode);
+  const isGames = () => !!(S.me && ((S.games && S.games.mode) || S.qf));
   const isPirate = () => !!(S.me && S.event && S.event.mode === "pirate");
   const isCom = () => !!(S.me && S.event && S.event.mode === "communiste");
 
@@ -920,6 +922,8 @@
       <div class="panel"><h3>Impôt communiste</h3>${comAdminHTML()}</div>
 <!--S:ev-->
       <div class="panel"><h3>Jeux : routeur et lancer d'amarre</h3>${gamesAdminHTML()}</div>
+<!--S:ev-->
+      <div class="panel"><h3>Quiz final n°1</h3>${qfAdminHTML()}</div>
 <!--S:jeu-->
       <div class="panel"><h3>Texte des quiz</h3><p class="muted" style="font-size:14px;margin-bottom:10px">Questions, bonnes réponses (*) et explications (>) de chaque quiz publié, à copier.</p>
         ${(() => { const qs = S.admin.quizTexts || []; if (!qs.length) return '<p class="muted">Aucun quiz.</p>'; const cur = qs.find((x) => String(x.id) === String(S.admin.qtId)) || qs[0];
@@ -941,6 +945,22 @@
     return `<h1>Espace organisateur</h1>${bar}
       <div class="chips" role="group" aria-label="Sections">${tabs.map(([k, l]) => `<button class="chip" data-action="admin-sec" data-sec="${k}" aria-pressed="${cur === k}">${l}</button>`).join("")}</div>
       ${secs[cur] || ""}<button class="btn ghost" data-action="tab" data-tab="score">Quitter l'espace organisateur</button>`;
+  }
+  function qfAdminHTML() {
+    const g = S.admin.qf;
+    if (!g) return '<p class="muted">Lance 16_quiz_final.sql dans Supabase pour installer le quiz final.</p>';
+    const m = g.mode || "", who = g.test ? (playerById(Number(g.test)) || {}).first_name : null;
+    const state = m === "on" ? "<b>Quiz ouvert</b> pour tout le monde." : m === "test" ? `<b>Test</b> : seulement ${esc(who || "?")} le voit. Rien n'est enregistré.` : "Quiz fermé.";
+    const optP = S.players.map((p) => `<option value="${p.id}" ${(g.test ? String(p.id) === String(g.test) : S.me && p.id === S.me.id) ? "selected" : ""}>Test : seulement ${esc(p.first_name)}</option>`).join("");
+    const optR = '<option value="">Tout le monde</option>' + S.players.map((p) => `<option value="${p.id}">${esc(p.first_name)}</option>`).join("");
+    const rows = (g.rows || []).map((x) => `${esc(x.name)} : ${esc(x.status)}${x.score != null ? `, ${x.score} / ${x.total}` : ""}`).join("<br>") || "Personne n'a commencé.";
+    return `<p class="log">${state}</p>
+      <div class="field"><label for="qfm">Mode</label><select id="qfm"><option value="" ${m === "" ? "selected" : ""}>Fermé</option><option value="on" ${m === "on" ? "selected" : ""}>Ouvert (tout le monde)</option><option value="test" ${m === "test" ? "selected" : ""}>Test (un seul joueur)</option></select></div>
+      <div class="field"><label for="qfp">Pour le test</label><select id="qfp">${optP}</select></div>
+      <button class="btn" data-action="set-qf">Appliquer</button>
+      <h4 style="margin:14px 0 4px">Participants</h4><div class="log">${rows}</div>
+      <div class="field" style="margin-top:10px"><label for="qfr">Relancer le quiz pour</label><select id="qfr">${optR}</select></div>
+      <button class="btn ghost small" data-action="reset-qf">Relancer</button>`;
   }
   function gamesAdminHTML() {
     const g = S.admin.games;
@@ -1090,6 +1110,8 @@
   function jeuHTML() {
     const head = '<h1>Jeu</h1>';
     if (!isGames()) return `${head}<p class="empty">Les jeux ne sont pas ouverts pour le moment.</p>`;
+    const quiz = quizCardHTML();
+    if (!(S.games && S.games.mode)) return `${head}${quiz}`;
     const g = S.games, test = g.mode === "test";
     const recLine = (k, label) => {
       const x = (g.games && g.games[k]) || {};
@@ -1101,9 +1123,52 @@
       return `<div class="panel jeu-card"><h3>${esc(nm)}</h3><p class="muted">${esc(txt)}</p><div class="jeu-rec">${lines}</div>
         <button class="btn" data-action="jeu-open" data-game="${k}">Jouer</button></div>`;
     }).join("");
-    const wait = (g.next_at ? `<p class="jeu-test">Booster du routeur niveau 1 : le prochain sera possible à ${hhmm(g.next_at)}.</p>` : "") + (g.unlocked === false ? '<p class="jeu-test">Bats d\'abord le record d\'un joueur au niveau 1 du routeur : tu pourras ensuite gagner des boosters aux niveaux 2, 3, 4 et à l\'amarre.</p>' : "");
-    return `${head}${test ? '<p class="jeu-test">Mode test : tu es seul à voir les jeux. Rien n\'est enregistré et aucun booster n\'est donné.</p>' : ""}${wait}
-      <p class="muted" style="margin-bottom:12px">Bats le record d'un autre joueur et gagne un booster de 3 cartes. Battre ton propre record ne rapporte rien. Commence par le niveau 1 du routeur : une fois que tu y as battu un record, tu peux aussi gagner des boosters aux niveaux 2, 3, 4 et à l'amarre.</p>${cards}`;
+    const wait = (g.next_at ? `<p class="jeu-test">Booster du routeur niveau 1 : le prochain sera possible à ${hhmm(g.next_at)}.</p>` : "");
+    return `${head}${quiz}${test ? '<p class="jeu-test">Mode test : tu es seul à voir les jeux. Rien n\'est enregistré et aucun booster n\'est donné.</p>' : ""}${wait}
+      <p class="muted" style="margin-bottom:12px">Bats le record d'un autre joueur et gagne un booster de 3 cartes. Battre ton propre record ne rapporte rien. Chaque niveau du routeur et l'amarre ont leur propre record. Les jeux se jouent en paysage.</p>${cards}`;
+  }
+  function quizCardHTML() {
+    const z = S.qf; if (!z) return "";
+    let body, btn = "";
+    if (z.status === "done") body = `Terminé : ${z.score} / ${z.total}. Ton booster t'attend dans l'onglet Boosters.`;
+    else if (z.status === "started") body = "Tu as quitté le quiz avant la fin. Demande à l'organisateur de le relancer.";
+    else { body = "Des images de la télé : devine ce qui est écrit dans le bandeau, puis regarde la vidéo qui donne la réponse. Une seule participation. À la fin, un booster plus ou moins gros selon ton nombre de bonnes réponses. Mets le son !"; btn = '<button class="btn" data-action="qf-open">Jouer</button>'; }
+    return `<div class="panel jeu-card"><h3>Quiz final n°1</h3>${z.mode === "test" ? '<p class="jeu-test">Mode test : tu es seul à voir le quiz. Rien n\'est enregistré et aucun booster n\'est donné.</p>' : ""}<p class="muted" style="margin-bottom:12px">${body}</p>${btn}</div>`;
+  }
+  async function openQuiz() {
+    if (!S.qf || S.qf.status !== "new") return;
+    try { await rpc("quizfinal_start", { p_player: S.me.id }); } catch (e) { toast(e.message, true); await loadGames(); render(); return; }
+    closeGame(true);
+    S.jeu.open = "quiz"; S.jeu.qfDone = false;
+    const o = document.createElement("div");
+    o.className = "jeu-full qf"; o.id = "jfull";
+    o.innerHTML = `<iframe id="jf" src="quiz.html?emb=1" title="Quiz final n°1" allow="autoplay; fullscreen; encrypted-media; picture-in-picture"></iframe>
+      <button class="jeu-x" aria-label="Quitter le quiz">×</button>
+      ${S.qf.mode === "test" ? '<div class="jeu-badge">Test : rien n\'est enregistré</div>' : ""}`;
+    document.body.appendChild(o);
+    o.querySelector(".jeu-x").addEventListener("click", () => {
+      if (S.qf && S.qf.mode !== "test" && !S.jeu.qfDone && !confirm("Quitter le quiz ? Tu ne pourras pas le refaire sans l'organisateur.")) return;
+      closeGame().then(() => loadGames()).then(render);
+    });
+  }
+  async function submitQuiz(score, total) {
+    let r;
+    try { r = await rpc("quizfinal_submit", { p_player: S.me.id, p_score: score, p_total: total }); } catch (e) { toast(e.message, true); return; }
+    S.jeu.qfDone = true;
+    const test = r.mode === "test";
+    const m = document.createElement("div");
+    m.className = "modal"; m.setAttribute("role", "dialog");
+    m.innerHTML = `<div class="modal-in"><h2>Quiz terminé</h2>
+      <p>Score : <b>${r.score} / ${r.total}</b>.</p>
+      <p>${test ? `En vrai, tu gagnerais un booster de ${r.size} cartes.` : r.booster ? `Un booster de ${r.size} cartes t'attend dans l'onglet Boosters.` : "Ton score était déjà enregistré."}</p>
+      <button class="btn" id="qf-go">${test ? "Fermer le quiz" : "Voir mes boosters"}</button> <button class="btn ghost" id="qf-no">Rester sur le quiz</button></div>`;
+    document.body.appendChild(m);
+    m.querySelector("#qf-no").addEventListener("click", () => m.remove());
+    m.querySelector("#qf-go").addEventListener("click", async () => {
+      m.remove(); await closeGame(true); await loadGames();
+      if (!test) { S.tab = "boosters"; try { await refresh(); } catch (e) {} }
+      render(); window.scrollTo(0, 0);
+    });
   }
   function gameFrame() { const f = document.getElementById("jf"); return f && f.contentWindow ? f : null; }
   function sendInit() {
@@ -1141,6 +1206,7 @@
     if (!d || typeof d !== "object" || !d.rhum || !S.jeu.open) return;
     const f = gameFrame();
     if (!f || ev.source !== f.contentWindow) return;
+    if (d.rhum === "quizscore" && S.jeu.open === "quiz") { await submitQuiz(Math.round(Number(d.score)), Math.round(Number(d.total))); return; }
     if (d.rhum === "ready") { sendInit(); return; }
     if (d.rhum === "score" && String(d.game).indexOf(S.jeu.open) === 0) await submitGame(d.game, Math.round(Number(d.score)));
   });
@@ -1155,7 +1221,6 @@
     if (S.games) { S.games.next_at = r.next_at || S.games.next_at || null; if (r.mode === "on" && r.record && game === "routeur1" && !r.locked && r.holder === S.me.first_name) S.games.unlocked = S.games.unlocked || r.booster || r.cooldown; }
     sendInit();
     if (r.booster) showGameWin(game, r);
-    else if (r.locked) toast("Record battu ! Pour gagner un booster ici, bats d'abord un record au niveau 1 du routeur.");
     else if (r.cooldown) toast("Record battu ! Le prochain booster du niveau 1 sera possible à " + hhmm(r.next_at) + ".");
     else if (r.record && r.mode === "on") toast("Score enregistré.");
     else if (r.mode === "test" && r.record) toast("Test : record battu, booster à gagner en vrai.");
@@ -1166,7 +1231,7 @@
     const test = r.mode === "test";
     m.innerHTML = `<div class="modal-in"><h2>Record battu !</h2>
       <p>${esc(gameName(game))} : ${esc(gameVal(game, r.score))}.</p>
-      <p>${test ? "En vrai, tu gagnerais un booster de 3 cartes." : "Un booster de 3 cartes t'attend dans l'onglet Boosters." + (game === "routeur1" ? " Le prochain booster du niveau 1 sera possible dans 1 heure." : "")}</p>
+      <p>${test ? "En vrai, tu gagnerais un booster de 3 cartes." : "Un booster de 3 cartes t'attend dans l'onglet Boosters."}</p>
       <button class="btn" id="gw-go">${test ? "Continuer" : "Voir mes boosters"}</button> <button class="btn ghost" id="gw-no">Continuer à jouer</button></div>`;
     document.body.appendChild(m);
     m.querySelector("#gw-no").addEventListener("click", () => m.remove());
@@ -1637,6 +1702,16 @@
       } catch (e) { toast(e.message, true); }
     },
     async "jeu-open"(el) { openGame(el.dataset.game); },
+    async "qf-open"() { await openQuiz(); },
+    async "set-qf"() {
+      const mode = document.getElementById("qfm").value, tp = document.getElementById("qfp").value;
+      try { await rpc("admin_quizfinal_set", { p_code: S.adminCode, p_mode: mode, p_test_player: tp ? Number(tp) : null }); toast(mode === "on" ? "Quiz ouvert pour tout le monde." : mode === "test" ? "Quiz en test." : "Quiz fermé."); await loadAdmin(); await loadGames(); render(); } catch (e) { toast(e.message, true); }
+    },
+    async "reset-qf"() {
+      const v = document.getElementById("qfr").value;
+      if (!confirm(v ? "Relancer le quiz pour ce joueur ?" : "Relancer le quiz pour tout le monde ?")) return;
+      try { await rpc("admin_quizfinal_reset", { p_code: S.adminCode, p_player: v ? Number(v) : null }); toast("Quiz relancé."); await loadAdmin(); await loadGames(); render(); } catch (e) { toast(e.message, true); }
+    },
     async "set-games"() {
       const mode = document.getElementById("gm").value, tp = document.getElementById("gt").value;
       try { await rpc("admin_games_set", { p_code: S.adminCode, p_mode: mode, p_test_player: tp ? Number(tp) : null }); toast(mode === "on" ? "Jeux ouverts pour tout le monde." : mode === "test" ? "Jeux en test." : "Jeux fermés."); await loadAdmin(); await loadGames(); render(); } catch (e) { toast(e.message, true); }
@@ -1702,6 +1777,7 @@
   }
   async function loadAdmin() {
     try { S.admin.games = await rpc("admin_games_overview", { p_code: S.adminCode }); } catch (e) { S.admin.games = null; }
+    try { S.admin.qf = await rpc("admin_quizfinal_overview", { p_code: S.adminCode }); } catch (e) { S.admin.qf = null; }
     try { S.admin.com = await rpc("admin_com_overview", { p_code: S.adminCode }); } catch (e) { S.admin.com = null; }
     try { S.admin.status = await rpc("admin_status", { p_code: S.adminCode }); } catch (e) { S.admin.status = null; }
     try { S.adminData = { fetish: await rpc("admin_fetish_list", { p_code: S.adminCode }) }; } catch (e) { S.adminData = { fetish: [] }; }
