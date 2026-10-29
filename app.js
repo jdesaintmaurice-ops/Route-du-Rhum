@@ -1103,7 +1103,7 @@
     }).join("");
     const wait = (g.next_at ? `<p class="jeu-test">Booster du routeur niveau 1 : le prochain sera possible à ${hhmm(g.next_at)}.</p>` : "") + (g.unlocked === false ? '<p class="jeu-test">Bats d\'abord le record d\'un joueur au niveau 1 du routeur : tu pourras ensuite gagner des boosters aux niveaux 2, 3, 4 et à l\'amarre.</p>' : "");
     return `${head}${test ? '<p class="jeu-test">Mode test : tu es seul à voir les jeux. Rien n\'est enregistré et aucun booster n\'est donné.</p>' : ""}${wait}
-      <p class="muted" style="margin-bottom:12px">Bats le record d'un autre joueur et gagne un booster de 3 cartes. Battre ton propre record ne rapporte rien. Commence par le niveau 1 du routeur : une fois que tu y as battu un record, tu peux aussi gagner des boosters aux niveaux 2, 3, 4 et à l'amarre. Au niveau 1, il faut attendre 1 heure entre deux boosters. Les jeux se jouent en paysage.</p>${cards}`;
+      <p class="muted" style="margin-bottom:12px">Bats le record d'un autre joueur et gagne un booster de 3 cartes. Battre ton propre record ne rapporte rien. Commence par le niveau 1 du routeur : une fois que tu y as battu un record, tu peux aussi gagner des boosters aux niveaux 2, 3, 4 et à l'amarre.</p>${cards}`;
   }
   function gameFrame() { const f = document.getElementById("jf"); return f && f.contentWindow ? f : null; }
   function sendInit() {
