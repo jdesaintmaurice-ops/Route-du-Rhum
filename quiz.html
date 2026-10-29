@@ -26,6 +26,7 @@ h1 { font: 700 26px/1 var(--display); text-transform: uppercase; letter-spacing:
 .stage { display: grid; gap: 16px; }
 .screen { background: #000; border-radius: 10px; overflow: hidden; line-height: 0; }
 .screen img { width: 100%; height: auto; display: block; }
+.screen .note { line-height: 1.4; padding: 16px; }
 .screen iframe { width: 100%; aspect-ratio: 16 / 9; border: 0; display: block; }
 .q { font: 700 44px/1 var(--display); text-transform: uppercase; letter-spacing: .06em; margin: 0; text-align: center; color: var(--accent); }
 .choices { display: grid; gap: 10px; }
@@ -111,16 +112,26 @@ function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
 function shuffle(a) { a = a.slice(); for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
 function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 function head() { tc.textContent = "Question " + (idx + 1) + " / " + ordre.length; prog.style.width = (idx / ordre.length * 100) + "%"; }
-function ecran(src, alt, secours) {
-  var s = el("div", "screen"), i = el("img"); i.src = src; i.alt = alt;
-  if (secours) i.onerror = function () { i.onerror = null; i.src = secours; };
-  s.appendChild(i); return s;
+/* Cherche l'image dans plusieurs dossiers au cas où le dossier n'est pas exactement au bon endroit. */
+var DOSSIERS = ["img/quiz/", "quiz/", "img/", "", "/img/quiz/"];
+function ecran(nom, alt, secours) {
+  var s = el("div", "screen"), i = el("img"), liste = [], k = 0;
+  DOSSIERS.forEach(function (d) { liste.push(d + nom); });
+  if (secours) DOSSIERS.forEach(function (d) { liste.push(d + secours); });
+  i.alt = alt;
+  i.onerror = function () {
+    k++;
+    if (k < liste.length) { i.src = liste[k]; return; }
+    i.onerror = null; i.removeAttribute("src");
+    s.appendChild(el("p", "note", "Image introuvable : " + nom + ". Vérifie qu'elle est bien dans le dossier img/quiz du site."));
+  };
+  i.src = liste[0]; s.appendChild(i); return s;
 }
 
 function etape1() {
   clearTimers(); var Q = ordre[idx];
   main.classList.remove("wide"); app.textContent = ""; head();
-  var s = ecran("img/quiz/" + Q.img + "-masque.jpg", "Capture de la vidéo avec un bandeau masqué"); s.classList.add("fade"); app.appendChild(s);
+  var s = ecran(Q.img + "-masque.jpg", "Capture de la vidéo avec un bandeau masqué"); s.classList.add("fade"); app.appendChild(s);
   later(function () { etape2(Q); }, DELAI_IMAGE);
 }
 function etape2(Q) {
@@ -136,7 +147,7 @@ function etape2(Q) {
 }
 function etape3(Q) {
   clearTimers(); app.textContent = ""; main.classList.add("wide");
-  var s = ecran("img/quiz/" + Q.img + "-plein.jpg", "Capture de la vidéo, bandeau visible", "img/quiz/" + Q.img + "-masque.jpg"); s.classList.add("fade"); app.appendChild(s);
+  var s = ecran(Q.img + "-plein.jpg", "Capture de la vidéo, bandeau visible", Q.img + "-masque.jpg"); s.classList.add("fade"); app.appendChild(s);
   var zone = el("div", "stage"); app.appendChild(zone);
   later(function () {
     var b = el("button", "btn fade", Q.video ? "Voir" : (idx + 1 < ordre.length ? "Question suivante" : "Voir mon score")); b.type = "button";
