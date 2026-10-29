@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Quiz du bandeau</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+:root {
+  --bg: #171614; --panel: #23211f; --fg: #f0ede6; --soft: #a8a499; --line: #3a3733; --accent: #e5554d; --accent-fg: #1a0907;
+  --display: "Oswald", "Arial Narrow", sans-serif; --body: "Source Sans 3", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 400 17px/1.45 var(--body); padding: 20px 16px 40px; }
+main { max-width: 640px; margin: 0 auto; display: grid; gap: 16px; transition: max-width .5s ease; }
+main.wide { max-width: 1000px; }
+header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+h1 { font: 700 26px/1 var(--display); text-transform: uppercase; letter-spacing: .04em; margin: 0; }
+.tc { font: 500 14px var(--mono); color: var(--soft); margin-left: auto; }
+.son { font: 500 13px var(--mono); color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+.son:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+.stage { display: grid; gap: 16px; }
+.screen { background: #000; border-radius: 10px; overflow: hidden; line-height: 0; }
+.screen img { width: 100%; height: auto; display: block; }
+.screen iframe { width: 100%; aspect-ratio: 16 / 9; border: 0; display: block; }
+.q { font: 700 44px/1 var(--display); text-transform: uppercase; letter-spacing: .06em; margin: 0; text-align: center; color: var(--accent); }
+.choices { display: grid; gap: 10px; }
+.choice { font: 600 17px/1.3 var(--body); text-align: left; color: var(--fg); background: var(--panel); border: 2px solid var(--line); border-radius: 10px; padding: 14px 16px; cursor: pointer; min-height: 52px; }
+.choice:hover { border-color: var(--accent); }
+.choice:focus-visible, .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.fade { animation: fade .5s ease both; }
+@keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.btn { font: 700 18px var(--display); text-transform: uppercase; letter-spacing: .05em; border-radius: 10px; padding: 14px 18px; cursor: pointer; text-align: center; width: 100%; border: 2px solid var(--accent); background: var(--accent); color: var(--accent-fg); }
+.titre { font: 700 24px/1.15 var(--display); text-transform: uppercase; letter-spacing: .03em; margin: 0; }
+.note { color: var(--soft); font-size: 15px; margin: 0; }
+.note a { color: #7cc4ff; }
+.score { font: 700 72px/1 var(--display); margin: 0; }
+.recap { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.recap li { display: flex; justify-content: space-between; gap: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+.ok { color: #6fd08c; font-weight: 700; } .ko { color: #f08a83; font-weight: 700; }
+@media (prefers-reduced-motion: reduce) { .fade { animation: none; } main { transition: none; } }
+</style>
+</head>
+<body>
+<main id="main">
+  <header><h1>Quiz du bandeau</h1><span class="tc" id="tc"></span><button type="button" id="son" class="son" aria-pressed="true">Son : oui</button></header>
+  <div class="bar"><i id="prog"></i></div>
+  <div id="app" class="stage"></div>
+</main>
+
+<script>
+/* ===== Réglages ===== */
+var DELAI_IMAGE = 2000;      // durée de l'image barrée seule (ms)
+var DELAI_VOIR = 3000;       // attente avant le bouton « Voir » (ms)
+var MELANGER_QUESTIONS = true;
+var MUSIQUE = "musique.mp3";  // fichier à mettre à côté de quiz.html
+
+/* Adresse d'incrustation des vidéos INA. Si ça n'affiche rien, change seulement cette fonction.
+   Variantes à essayer : "https://player-hub.ina.fr/embed/" + id.toLowerCase()
+                          "https://player.ina.fr/player/embed/" + id + "/1/1b0bd203fbcd702f9bc9b10ac3d0fc21/wide/1" */
+function inaEmbed(id) { return "https://player-hub.ina.fr/embed/" + id; }
+
+/* ===== Questions =====
+   img   : nom de base des images dans img/quiz/ (NOM-masque.jpg et NOM-plein.jpg)
+   bonne / faux : la bonne réponse et les deux fausses
+   video : null (pas de vidéo), { yt: "ID YouTube" } ou { ina: "Media ID", page: "adresse de la page INA" }
+   Pour ajouter une question : copier un bloc, ajouter les deux images dans img/quiz/. */
+var QUESTIONS = [
+  { img: "barnier", bonne: "Michel Barnier", faux: ["Michel Rocard", "Michel Noir"],
+    sujet: "1971 : Michel Barnier, 20 ans et déjà impliqué", video: { yt: "MmM8GKj5lyE", page: "https://www.youtube.com/watch?v=MmM8GKj5lyE" } },
+  { img: "twirling", bonne: "Professeure de Twirling Bâton, « On a testé : Le Twirling »",
+    faux: ["Professeure de Majorettes, « On a testé : Les Majorettes »", "Entraîneuse de Gymnastique rythmique, « On a testé : La Gym rythmique »"],
+    sujet: "On a mouillé le maillot : le twirling",
+    video: { ina: "G3956346_001_031", page: "https://www.ina.fr/ina-eclaire-actu/video/g3956346_001_031/on-a-mouille-le-maillot-le-twirling" } },
+  { img: "biere", bonne: "brasseur amateur", faux: ["cidriculteur amateur", "vigneron amateur"],
+    sujet: "Fabrique ta bière toi-même",
+    video: { ina: "LL00001246912", page: "https://www.ina.fr/ina-eclaire-actu/video/ll00001246912/fabrique-ta-biere-toi-meme" } },
+  { img: "masseur", bonne: "Masseur de l'École de Danse de Paris",
+    faux: ["Kinésithérapeute de l'Opéra de Lyon", "Entraîneur de l'équipe de France de gymnastique"],
+    sujet: "Kader Belarbi",
+    video: { ina: "CAB90006176", page: "https://www.ina.fr/ina-eclaire-actu/video/cab90006176/kader-belarbi" } },
+  { img: "calculatrice", bonne: "Responsable calculatrices, Papeterie Lamartine",
+    faux: ["Responsable informatique, Librairie du Lycée", "Responsable rayon scolaire, Papeterie Centrale"],
+    sujet: "Baccalauréat : attention à la triche sur calculatrices",
+    video: { ina: "3102349001017", page: "https://www.ina.fr/ina-eclaire-actu/video/3102349001017/baccalaureat-attention-a-la-triche-sur-calculatrices" } },
+  { img: "marini", bonne: "Comédienne", faux: ["Maquilleuse", "Costumière"], sujet: "Marilu Marini, groupe TSE", video: null },
+  { img: "irradie", bonne: "Un employé irradié", faux: ["Un employé licencié", "Un employé rescapé"], sujet: "Un employé irradié", video: null },
+  { img: "tornade", bonne: "Chasseur de tornades, fondateur de l'", faux: ["Météorologue, directeur de l'", "Journaliste, rédacteur en chef de l'"],
+    sujet: "Chasseurs de tornades : une profession qui attire de plus en plus",
+    video: { ina: "8496618_001_020", page: "https://www.ina.fr/ina-eclaire-actu/video/8496618_001_020/chasseurs-de-tornades-une-profession-qui-attire-de-plus-en-plus" } },
+  { img: "kasparian", bonne: "Coadjuteur du Patriarche arménien d'Istanbul",
+    faux: ["Évêque de l'Église orthodoxe de Jérusalem", "Archimandrite du monastère de Sainte-Catherine"],
+    sujet: "Vartalet Chenork Kasparian", video: null },
+  { img: "diacre", bonne: "Gardien du P.S.G.", faux: ["Capitaine du Vatican FC", "Attaquant du séminaire de Saint-Sulpice"],
+    sujet: "Football : la Clericus Cup",
+    video: { ina: "3299030001022", page: "https://www.ina.fr/ina-eclaire-actu/video/3299030001022/football-la-clericus-cup" } },
+  { img: "sorcier", bonne: "Sorcier", faux: ["Marabout", "Astrologue"], sujet: "Le sorcier qui part dans l'astral",
+    video: { ina: "VDD10011537", page: "https://www.ina.fr/ina-eclaire-actu/video/vdd10011537/le-sorcier-qui-part-dans-l-astral" } }
+];
+
+/* ===== Déroulé ===== */
+var app = document.getElementById("app"), main = document.getElementById("main"), prog = document.getElementById("prog"), tc = document.getElementById("tc");
+var ordre = QUESTIONS.slice(), idx = 0, score = 0, results = [], timers = [];
+
+function clearTimers() { timers.forEach(clearTimeout); timers = []; }
+function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
+function shuffle(a) { a = a.slice(); for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function head() { tc.textContent = "Question " + (idx + 1) + " / " + ordre.length; prog.style.width = (idx / ordre.length * 100) + "%"; }
+function ecran(src, alt, secours) {
+  var s = el("div", "screen"), i = el("img"); i.src = src; i.alt = alt;
+  if (secours) i.onerror = function () { i.onerror = null; i.src = secours; };
+  s.appendChild(i); return s;
+}
+
+function etape1() {
+  clearTimers(); var Q = ordre[idx];
+  main.classList.remove("wide"); app.textContent = ""; head();
+  var s = ecran("img/quiz/" + Q.img + "-masque.jpg", "Capture de la vidéo avec un bandeau masqué"); s.classList.add("fade"); app.appendChild(s);
+  later(function () { etape2(Q); }, DELAI_IMAGE);
+}
+function etape2(Q) {
+  var zone = el("div", "stage fade");
+  zone.appendChild(el("p", "q", "Qui ?"));
+  var box = el("div", "choices");
+  shuffle([Q.bonne].concat(Q.faux)).forEach(function (txt) {
+    var b = el("button", "choice", txt); b.type = "button";
+    b.addEventListener("click", function () { var ok = txt === Q.bonne; if (ok) score++; results.push({ sujet: Q.sujet, ok: ok }); etape3(Q); });
+    box.appendChild(b);
+  });
+  zone.appendChild(box); app.appendChild(zone);
+}
+function etape3(Q) {
+  clearTimers(); app.textContent = ""; main.classList.add("wide");
+  var s = ecran("img/quiz/" + Q.img + "-plein.jpg", "Capture de la vidéo, bandeau visible", "img/quiz/" + Q.img + "-masque.jpg"); s.classList.add("fade"); app.appendChild(s);
+  var zone = el("div", "stage"); app.appendChild(zone);
+  later(function () {
+    var b = el("button", "btn fade", Q.video ? "Voir" : (idx + 1 < ordre.length ? "Question suivante" : "Voir mon score")); b.type = "button";
+    b.addEventListener("click", function () { Q.video ? etape5(Q) : suite(); });
+    zone.appendChild(b); b.focus();
+  }, DELAI_VOIR);
+}
+function etape5(Q) {
+  clearTimers(); app.textContent = ""; main.classList.add("wide");
+  app.appendChild(el("h2", "titre", Q.sujet));
+  var v = Q.video, src = v.yt ? "https://www.youtube.com/embed/" + v.yt + "?rel=0" : inaEmbed(v.ina);
+  var s = el("div", "screen"), f = el("iframe"); f.src = src; f.title = Q.sujet; f.allowFullscreen = true; f.setAttribute("allow", "fullscreen; autoplay; encrypted-media"); s.appendChild(f); app.appendChild(s);
+  var n = el("p", "note", "La vidéo ne s'affiche pas ? "), a = el("a", "", "L'ouvrir sur son site"); a.href = v.page; a.target = "_blank"; a.rel = "noopener"; n.appendChild(a); app.appendChild(n);
+  var b = el("button", "btn", idx + 1 < ordre.length ? "Question suivante" : "Voir mon score"); b.type = "button"; b.addEventListener("click", suite); app.appendChild(b);
+}
+function suite() { idx++; idx < ordre.length ? etape1() : fin(); }
+function fin() {
+  clearTimers(); app.textContent = ""; main.classList.remove("wide"); prog.style.width = "100%"; tc.textContent = "Terminé";
+  app.appendChild(el("p", "score", score + " / " + ordre.length));
+  var ul = el("ul", "recap");
+  results.forEach(function (h) { var li = el("li"); li.appendChild(el("span", "", h.sujet)); li.appendChild(el("b", h.ok ? "ok" : "ko", h.ok ? "Juste" : "Raté")); ul.appendChild(li); });
+  app.appendChild(ul);
+  var r = el("button", "btn", "Rejouer"); r.type = "button"; r.addEventListener("click", depart); app.appendChild(r);
+}
+function depart() { ordre = MELANGER_QUESTIONS ? shuffle(QUESTIONS) : QUESTIONS.slice(); idx = 0; score = 0; results = []; etape1(); }
+
+/* ===== Musique de fond (en boucle) =====
+   Le navigateur n'autorise le son qu'après un geste de l'utilisateur : la musique démarre
+   donc au premier toucher ou clic n'importe où sur la page. */
+var musique = new Audio(MUSIQUE); musique.loop = true; musique.volume = 0.5; musique.preload = "auto";
+var sonVoulu = true, musiqueLancee = false;
+var btnSon = document.getElementById("son");
+function majSon() { btnSon.textContent = sonVoulu ? "Son : oui" : "Son : non"; btnSon.setAttribute("aria-pressed", sonVoulu ? "true" : "false"); }
+function lancerMusique() {
+  if (musiqueLancee || !sonVoulu) return;
+  var p = musique.play();
+  if (p && p.then) p.then(function () { musiqueLancee = true; }, function () { /* fichier absent ou son refusé : on réessaiera au prochain toucher */ });
+  else musiqueLancee = true;
+}
+["pointerdown", "keydown", "touchstart"].forEach(function (ev) { document.addEventListener(ev, lancerMusique, { passive: true }); });
+btnSon.addEventListener("click", function (e) {
+  e.stopPropagation(); sonVoulu = !sonVoulu;
+  if (sonVoulu) { musiqueLancee = false; lancerMusique(); } else { musique.pause(); musiqueLancee = false; }
+  majSon();
+});
+majSon();
+/* Si les vidéos ont du son, la musique couvre le début : on la coupe pendant la lecture d'une vidéo. */
+var etape5Origine = etape5;
+etape5 = function (Q) { musique.pause(); musiqueLancee = false; etape5Origine(Q); };
+var suiteOrigine = suite;
+suite = function () { suiteOrigine(); lancerMusique(); };
+
+/* ===== Écran d'accueil ===== */
+function accueil() {
+  clearTimers(); app.textContent = ""; main.classList.remove("wide"); tc.textContent = ""; prog.style.width = "0";
+  app.appendChild(el("h2", "titre", "Mets la musique !"));
+  app.appendChild(el("p", "note", "Monte le son de ton téléphone ou de ton ordinateur et coupe le mode silencieux. La musique démarre dès que tu touches l'écran."));
+  var b = el("button", "btn", "Commencer"); b.type = "button"; b.addEventListener("click", depart); app.appendChild(b);
+}
+accueil();
+</script>
+</body>
+</html>
