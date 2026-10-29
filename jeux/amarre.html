@@ -29,6 +29,17 @@
   .ok { color: var(--good); } .ko { color: var(--bad); }
   select { width: 100%; box-sizing: border-box; font: 500 18px var(--body); padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: #0d1722; color: var(--ink); }
   label { display: block; font-size: 14px; color: var(--muted); margin: 10px 0 6px; }
+  /* Dans l'app : le jeu occupe tout l'écran en paysage */
+  body.emb { padding: 0; height: 100vh; overflow: hidden; background: #0b2236; }
+  body.emb main { max-width: none; gap: 0; height: 100%; display: block; }
+  body.emb header, body.emb details { display: none; }
+  body.emb #gameP { padding: 0; border: 0; background: none; position: relative; height: 100%; }
+  body.emb .hud { position: absolute; top: 6px; left: 14px; right: 60px; z-index: 2; margin: 0; pointer-events: none; }
+  body.emb .hud div { font-size: 24px; text-shadow: 0 1px 3px #000; }
+  body.emb canvas { width: min(100vw, 177.78vh); margin: 0 auto; border-radius: 0; }
+  body.emb .msg { position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; margin: 0; z-index: 2; text-shadow: 0 1px 4px #000; }
+  body.emb #endRow { position: absolute; bottom: 52px; left: 0; right: 0; justify-content: center; margin: 0 !important; z-index: 3; }
+  body.emb #startP { position: absolute; inset: 0; display: grid; place-items: center; z-index: 5; background: #0b2236; }
 </style>
 
 <main>
@@ -53,9 +64,9 @@
 
   <details class="panel">
     <summary style="cursor:pointer;font:700 18px var(--display);letter-spacing:.03em">Organisateur</summary>
-    <p class="muted" style="margin-top:10px">Trois essais ratés et c'est fini. Un cordage posé rapporte 1 à 3 points selon la précision, multipliés par le niveau. À chaque lancer réussi le quai s'éloigne, le taquet rétrécit, le vent monte, le quai se met à varier en hauteur, le bateau tangue et l'aide de visée raccourcit.</p>
+    <p class="muted" style="margin-top:10px">Trois essais ratés et c'est fini. Un cordage posé rapporte 1 à 3 points selon la précision, multipliés par le niveau. 50 niveaux. À chaque lancer réussi la difficulté monte : quai plus loin, taquet plus petit, vent, rafales, bateau qui tangue, aide de visée qui raccourcit puis disparaît, mouettes (niveau 4, de plus en plus nombreuses), mât (6), câble de grue (8) de plus en plus bas, puis un deuxième mât (25) qui arrêtent le cordage.</p>
     <label for="lvl0">Niveau de départ (pour tester)</label>
-    <select id="lvl0"><option value="1">1</option><option value="4">4</option><option value="8">8</option><option value="12">12</option></select>
+    <select id="lvl0"><option value="1">1</option><option value="4">4</option><option value="8">8</option><option value="12">12</option><option value="25">25</option><option value="40">40</option><option value="50">50</option></select>
   </details>
 </main>
 
@@ -65,29 +76,64 @@
   var $ = function (id) { return document.getElementById(id); };
   var cv = $("cv"), cx = cv.getContext("2d");
   var level = 1, score = 0, lives = 3, best = 0, wind = 0, quayTop = 300, tx = 560, tr = 40, phase = "idle", t0 = performance.now();
-  var drag = null, shot = null, over = false;
+  var drag = null, shot = null, over = false, obs = { birds: [], mast: null, cable: null, mast2: null, cable2: null };
+  function birdPos(b, now) { var span = W + 120, x = (((b.x0 + b.v * now / 1000) % span) + span) % span - 60; return { x: x, y: b.y + Math.sin(now / 400 + b.x0) * 10 }; }
 
-  try { best = +localStorage.getItem("amarre_best") || 0; } catch (e) {}
+  try { if (window.parent === window) best = +localStorage.getItem("amarre_best") || 0; } catch (e) {}
   $("best").textContent = best;
 
   // Difficulté en fonction du niveau (monte à chaque lancer réussi)
+  var MAXLV = 50;
   function params(L) {
     return {
       dist: Math.min(640, 300 + 30 * L),
-      r: Math.max(13, 46 - 3.2 * L),
-      wind: Math.min(130, (L - 1) * 11),
-      var: Math.min(70, Math.max(0, (L - 2) * 9)),
-      sway: Math.min(30, Math.max(0, (L - 3) * 4.5)),
-      aid: Math.max(0.12, 1.05 - 0.09 * L)
+      r: Math.max(11, 46 * Math.pow(0.962, L - 1)),
+      wind: Math.min(120, (L - 1) * 6),
+      var: Math.min(70, Math.max(0, (L - 2) * 6)),
+      sway: Math.min(42, Math.max(0, (L - 3) * 2.2)),
+      aid: L < 20 ? Math.max(0.12, 1.05 - 0.09 * L) : 0,
+      gust: Math.min(80, Math.max(0, (L - 9) * 3)),
+      birds: L < 4 ? 0 : Math.min(8, 1 + Math.floor((L - 4) / 5)),
+      mast: L >= 6 ? Math.min(150, 90 + (L - 6) * 4) : 0,
+      mast2: L >= 25,
+      cable: L >= 8 ? Math.min(190, 105 + (L - 8) * 3) : 0,
+      cable2: false
     };
   }
-  function setup() {
+  // Garantit qu'au moins quelques lancers réussissent (sans compter les mouettes, qui bougent)
+  function solvable() {
+    var T = targetPt(), qx = tx - 52, found = 0;
+    for (var a = 12; a <= 78; a += 1) for (var pw = 0.25; pw <= 1; pw += 0.004) {
+      var v = VMAX * pw, ang = a * Math.PI / 180, x = LX, y = 318, u = Math.cos(ang) * v, w = -Math.sin(ang) * v, best = 1e9;
+      for (var i = 0; i < 3000; i++) {
+        u += wind * 0.004; w += G * 0.004; x += u * 0.004; y += w * 0.004;
+        var d = Math.hypot(x - T.x, y - T.y); if (d < best) best = d;
+        if (best <= tr && d > best + 4) { if (++found >= 6) return true; break; }
+        if (y > WATER || x > W + 20 || (x > qx && y > quayTop)) break;
+        var hit = false;
+        [obs.mast, obs.mast2].forEach(function (m) { if (m && Math.abs(x - m.x) < 8 && y > m.top && y < WATER) hit = true; });
+        [obs.cable, obs.cable2].forEach(function (c) { if (c && Math.abs(x - c.x) < 9 && y < c.yb + 14) hit = true; });
+        if (hit) break;
+      }
+    }
+    return false;
+  }
+  function build() {
     var p = params(level);
     tx = LX + p.dist; tr = p.r;
     quayTop = 300 + (Math.random() * 2 - 1) * p.var;
     wind = (Math.random() < .5 ? -1 : 1) * p.wind * (0.5 + Math.random() * 0.5);
     if (level === 1) wind = 0;
-    $("lv").textContent = level; $("sc").textContent = score;
+    obs = { birds: [], mast: null, cable: null, mast2: null, cable2: null };
+    for (var i = 0; i < p.birds; i++) obs.birds.push({ x0: Math.random() * W, y: 120 + Math.random() * 130, v: (Math.random() < .5 ? -1 : 1) * (55 + Math.random() * 45 + Math.min(level, 40) * 3) });
+    if (p.mast) obs.mast = { x: LX + p.dist * (0.3 + Math.random() * 0.22), top: WATER - p.mast };
+    if (p.cable) obs.cable = { x: LX + p.dist * (0.6 + Math.random() * 0.12), yb: p.cable };
+    if (p.mast2 && obs.mast) obs.mast2 = { x: obs.mast.x + 50 + Math.random() * 40, top: obs.mast.top + 20 };
+    if (p.cable2 && obs.cable) obs.cable2 = { x: obs.cable.x - 60 - Math.random() * 25, yb: Math.min(200, obs.cable.yb + 20) };
+  }
+  function setup() {
+    for (var tries = 0; tries < 40; tries++) { build(); if (solvable()) break; }
+    $("lv").textContent = level + " / " + MAXLV; $("sc").textContent = score;
     $("lives").textContent = "●".repeat(lives) + "○".repeat(3 - lives);
   }
   function swayY(t) { var p = params(level); return Math.sin(t / 1000 * 1.7) * p.sway; }
@@ -139,6 +185,10 @@
       // jauge
       cx.fillStyle = "rgba(255,255,255,.15)"; cx.fillRect(20, H - 30, 160, 12); cx.fillStyle = "#f2b84b"; cx.fillRect(20, H - 30, 160 * v.pw, 12);
     }
+    // obstacles
+    [obs.mast, obs.mast2].forEach(function (M) { if (!M) return; cx.strokeStyle = "#d9e2ec"; cx.lineWidth = 6; cx.beginPath(); cx.moveTo(M.x, WATER + 6); cx.lineTo(M.x, M.top); cx.stroke(); cx.fillStyle = "#c0392b"; cx.beginPath(); cx.moveTo(M.x, M.top); cx.lineTo(M.x + 26, M.top + 8); cx.lineTo(M.x, M.top + 16); cx.fill(); cx.fillStyle = "#e9eef5"; cx.fillRect(M.x - 50, WATER - 8, 100, 16); });
+    [obs.cable, obs.cable2].forEach(function (C) { if (!C) return; cx.fillStyle = "#c9a14a"; cx.fillRect(C.x - 40, 0, 80, 10); cx.strokeStyle = "#8d96a0"; cx.lineWidth = 5; cx.beginPath(); cx.moveTo(C.x, 10); cx.lineTo(C.x, C.yb); cx.stroke(); cx.fillStyle = "#8d96a0"; cx.fillRect(C.x - 9, C.yb, 18, 14); });
+    obs.birds.forEach(function (b) { var q = birdPos(b, now), f = Math.sin(now / 90 + b.x0) * 8; cx.strokeStyle = "#fff"; cx.lineWidth = 4; cx.lineCap = "round"; cx.beginPath(); cx.moveTo(q.x - 22, q.y - f); cx.quadraticCurveTo(q.x - 8, q.y - 12, q.x, q.y); cx.quadraticCurveTo(q.x + 8, q.y - 12, q.x + 22, q.y - f); cx.stroke(); });
     // cordage
     if (shot) {
       cx.strokeStyle = "#e8d3a2"; cx.lineWidth = 4; cx.lineCap = "round"; cx.beginPath(); cx.moveTo(shot.x0, shot.y0);
@@ -161,7 +211,7 @@
     var v = vel(drag); drag = null;
     if (v.len < 18 || v.vx <= 0) { phase = "idle"; return; }
     var ly = launchY(performance.now());
-    shot = { x0: LX, y0: ly, x: LX, y: ly, vx: v.vx, vy: v.vy, t: 0, last: performance.now(), trail: [], best: 1e9 };
+    shot = { x0: LX, y0: ly, x: LX, y: ly, vx: v.vx, vy: v.vy, t: 0, last: performance.now(), trail: [], best: 1e9, gp: Math.random() * 6 };
     phase = "fly";
   }
   cv.addEventListener("pointerup", release); cv.addEventListener("pointercancel", function () { drag = null; if (phase === "aim") phase = "idle"; });
@@ -170,24 +220,31 @@
     var dt = Math.min(0.05, (now - shot.last) / 1000); shot.last = now;
     var T = targetPt(), steps = Math.ceil(dt / 0.004), h = dt / steps, qx = tx - 52;
     for (var i = 0; i < steps; i++) {
-      shot.vx += wind * h; shot.vy += G * h; shot.x += shot.vx * h; shot.y += shot.vy * h; shot.t += h;
+      shot.vx += (wind + params(level).gust * Math.sin(shot.t * 1.8 + shot.gp)) * h; shot.vy += G * h; shot.x += shot.vx * h; shot.y += shot.vy * h; shot.t += h;
       var d = Math.hypot(shot.x - T.x, shot.y - T.y); if (d < shot.best) shot.best = d;
       if (shot.best <= tr && d > shot.best + 4) return land(true);
       if (shot.y > WATER || shot.x > W + 20 || shot.x < -20) return land(shot.best <= tr);
       if (shot.x > qx && shot.y > quayTop) return land(shot.best <= tr);
+      var ms = [obs.mast, obs.mast2], cs = [obs.cable, obs.cable2];
+      for (var mi = 0; mi < 2; mi++) {
+        if (ms[mi] && Math.abs(shot.x - ms[mi].x) < 8 && shot.y > ms[mi].top && shot.y < WATER) return land(false, "Dans le mât.");
+        if (cs[mi] && Math.abs(shot.x - cs[mi].x) < 9 && shot.y < cs[mi].yb + 14) return land(false, "Dans le câble de la grue.");
+      }
+      for (var bi = 0; bi < obs.birds.length; bi++) { var bq = birdPos(obs.birds[bi], now); if (Math.hypot(shot.x - bq.x, shot.y - bq.y) < 26) return land(false, "Une mouette a attrapé le cordage."); }
     }
     if (Math.round(shot.t * 60) % 2 === 0) shot.trail.push([shot.x, shot.y]);
   }
-  function land(caught) {
+  function land(caught, why) {
     var d = shot.best, pt = 0; shot = null; phase = "idle";
     if (caught) {
-      pt = d < tr * .33 ? 3 : d < tr * .66 ? 2 : 1; var gain = pt * level; score += gain; level++;
+      pt = d < tr * .33 ? 3 : d < tr * .66 ? 2 : 1; var gain = pt * level; score += gain; level++; var allDone = level > MAXLV;
       if (window.rhumScore) window.rhumScore("amarre", score);
       $("msg").className = "msg ok"; $("msg").textContent = (pt === 3 ? "En plein sur le taquet ! " : pt === 2 ? "Bien posé. " : "Juste à temps. ") + "+" + gain;
-      if (score > best) { best = score; $("best").textContent = best; try { localStorage.setItem("amarre_best", best); } catch (e) {} }
-      setup();
+      if (window.parent === window && score > best) { best = score; $("best").textContent = best; try { localStorage.setItem("amarre_best", best); } catch (e) {} }
+      if (allDone) { over = true; $("msg").className = "msg ok"; $("msg").textContent = "Les 50 niveaux ! " + score + " points."; $("endRow").hidden = false; $("lv").textContent = MAXLV; $("sc").textContent = score; }
+      else setup();
     } else {
-      lives--; $("msg").className = "msg ko"; $("msg").textContent = d < tr * 2 ? "Raté de peu." : "Dans l'eau.";
+      lives--; $("msg").className = "msg ko"; $("msg").textContent = why || (d < tr * 2 ? "Raté de peu." : "Dans l'eau.");
       $("lives").textContent = "●".repeat(lives) + "○".repeat(3 - lives);
       if (lives <= 0) { over = true; $("msg").textContent = "Fini : " + score + " points, niveau " + level + "."; $("endRow").hidden = false; }
       else setup();
@@ -195,19 +252,23 @@
   }
   $("start").onclick = function () { $("startP").hidden = true; $("gameP").hidden = false; begin(); };
   $("again").onclick = begin;
-  var EMB = window.parent !== window; if (EMB) document.querySelector("details").hidden = true;
+  var EMB = window.parent !== window;
   function begin() { level = EMB ? 1 : +$("lvl0").value; score = 0; lives = 3; over = false; phase = "idle"; shot = null; drag = null; $("endRow").hidden = true; $("msg").textContent = ""; setup(); }
+  // Record de tous les joueurs, envoyé par l'app
+  window.addEventListener("message", function (e) {
+    var d = e.data; if (!d || d.rhum !== "init" || !d.games || !d.games.amarre) return;
+    var g = d.games.amarre; if (g.score) { best = g.score; $("best").textContent = best; }
+  });
   setup(); requestAnimationFrame(frame);
-  window.__am = { params: params, vel: vel, set: function (L) { level = L; setup(); }, state: function () { return { level: level, score: score, lives: lives, tx: tx, quayTop: quayTop, wind: wind, tr: tr }; } };
+  window.__am = { solvable: solvable, obs: function () { return obs; }, params: params, vel: vel, set: function (L) { level = L; setup(); }, state: function () { return { gust: params(level).gust, level: level, score: score, lives: lives, tx: tx, quayTop: quayTop, wind: wind, tr: tr }; } };
 })();
 </script>
 <script>
 // Dans l'app : le jeu envoie son score et sa hauteur à la page qui l'affiche. Seul, il ne fait rien de plus.
 (function () {
   if (window.parent === window) return;
+  document.body.classList.add("emb");
   window.rhumScore = function (g, s) { parent.postMessage({ rhum: "score", game: g, score: s }, "*"); };
-  function h() { parent.postMessage({ rhum: "h", h: document.documentElement.scrollHeight }, "*"); }
-  try { new ResizeObserver(h).observe(document.body); } catch (e) {}
-  h();
+  parent.postMessage({ rhum: "ready" }, "*");
 })();
 </script>

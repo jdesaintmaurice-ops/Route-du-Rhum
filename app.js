@@ -351,6 +351,23 @@
       q(S.sb.from("trades").select("*").order("id", { ascending: false }).limit(300))
     ]);
     S.mk.decks = decks; S.mk.trades = trades; S.mk.loaded = true;
+    await loadTradeItems();
+  }
+  // Cartes détaillées des demandes multiples (installées par 15_marche_multi.sql)
+  async function loadTradeItems() {
+    try {
+      const rows = await q(S.sb.from("trade_cards").select("*").order("trade_id", { ascending: false }).limit(2000));
+      const m = {}; rows.forEach((x) => { (m[x.trade_id] = m[x.trade_id] || { give: [], want: [] })[x.side].push(x.card_id); });
+      S.mk.items = m; S.mk.multi = true;
+    } catch (e) { S.mk.items = {}; S.mk.multi = false; }
+  }
+  // Mise à jour légère des demandes (appelée souvent) : dit si une nouvelle demande est arrivée
+  async function pollTrades() {
+    if (!S.me || !S.mk.loaded) return false;
+    const before = S.mk.trades.filter((t) => t.to_player === S.me.id && t.status === "pending").map((t) => t.id).join(",");
+    S.mk.trades = await q(S.sb.from("trades").select("*").order("id", { ascending: false }).limit(300));
+    await loadTradeItems();
+    return before !== S.mk.trades.filter((t) => t.to_player === S.me.id && t.status === "pending").map((t) => t.id).join(",");
   }
 
   // ---------- Dessins ----------
@@ -705,6 +722,13 @@
   function tradeLine(t, mode) {
     const from = playerById(t.from_player), to = playerById(t.to_player);
     const fn = esc((from || {}).first_name), tn = esc((to || {}).first_name);
+    const it = S.mk.items && S.mk.items[t.id];
+    if (it) {
+      const gl = it.give.map(cardLabel).join(", "), wl = it.want.map(cardLabel).join(", ");
+      if (mode === "in") return `<b>${fn}</b> te propose ${gl} contre ${wl}`;
+      if (mode === "out") return `Tu proposes ${gl} à <b>${tn}</b> contre ${wl}`;
+      return `<b>${fn}</b> ⇄ <b>${tn}</b> : ${gl} contre ${wl}`;
+    }
     const heavy = !t.give_card;
     const perk = t.perk ? `<div class="mk-perk">${heavy ? "Contrepartie" : "En plus"} : ${esc(t.perk)}</div>` : "";
     let head;
@@ -738,48 +762,64 @@
       <div class="field"><label for="mq">Rechercher un joueur ou une carte</label><input id="mq" type="search" autocomplete="off" placeholder="Ex. Le Cam, Maxi Edmond de Rothschild, Marie…" value="${esc(S.mk.q)}"></div>
       <div id="mres">${marketSearchHTML()}</div>`;
   }
+  // Demande d'échange : plusieurs cartes contre plusieurs cartes (5 au maximum de chaque côté)
   function openCompose(playerId, cardId) {
-    const to = playerById(playerId), want = cardById(cardId);
-    const counts = ownedCounts();
-    const mine = S.cards.filter((c) => counts.has(c.id)).sort((x, y) => (counts.get(y.id) - counts.get(x.id)) || RAR.indexOf(x.rarity) - RAR.indexOf(y.rarity) || x.name.localeCompare(y.name));
+    const to = playerById(playerId);
+    const counts = ownedCounts(), theirs = deckOf(playerId);
+    const rank = (c) => RAR.indexOf(c.rarity);
+    const mine = S.cards.filter((c) => counts.has(c.id)).sort((x, y) => rank(x) - rank(y) || x.name.localeCompare(y.name));
+    const their = S.cards.filter((c) => theirs.has(c.id)).sort((x, y) => rank(x) - rank(y) || x.name.localeCompare(y.name));
     if (!mine.length) return toast("Tu n'as encore aucune carte à proposer.", true);
     const m = document.createElement("div");
     m.className = "modal"; m.setAttribute("role", "dialog");
     m.innerHTML = `<div class="modal-in mk-compose"><h2 style="margin-top:0">Échanger avec ${esc(to.first_name)}</h2>
-      <p>Tu veux : ${cardLabel(want.id)}</p>
-      <div class="field"><label for="mkfind">Je donne : cherche dans tes cartes</label><input id="mkfind" type="search" autocomplete="off" placeholder="Nom d'un skipper ou d'un bateau…"></div>
-      <div class="chips" role="group" aria-label="Filtrer mes cartes"><button type="button" class="chip" data-f="all" aria-pressed="true">Toutes (${mine.length})</button><button type="button" class="chip" data-f="dupes" aria-pressed="false">Mes doublons (${mine.filter((c) => counts.get(c.id) > 1).length})</button></div>
-      <div class="mk-picklist" id="mkpicks"></div>
-      <p class="muted" id="mkchosen" style="font-size:14px;min-height:20px"></p>
+      <h3 class="mk-h">Tu veux <small>(jusqu'à 5)</small></h3>
+      <div class="field"><input id="wfind" type="search" autocomplete="off" placeholder="Chercher dans son deck…" aria-label="Chercher dans son deck"></div>
+      <div class="mk-picklist" id="wpicks"></div>
+      <h3 class="mk-h">Tu donnes <small>(jusqu'à 5)</small></h3>
+      <div class="field"><input id="gfind" type="search" autocomplete="off" placeholder="Chercher dans tes cartes…" aria-label="Chercher dans tes cartes"></div>
+      <div class="mk-picklist" id="gpicks"></div>
+      <p class="mk-sum" id="mksum"></p>
       <button class="btn" id="mksend" disabled>Envoyer la demande</button><button class="btn alt" id="mkno" style="margin-top:8px">Annuler</button></div>`;
     document.body.appendChild(m);
-    let chosen = null, dupesOnly = false;
-    const box = m.querySelector("#mkpicks"), find = m.querySelector("#mkfind"), send = m.querySelector("#mksend");
+    const want = new Set(cardId ? [cardId] : []), give = new Set();
+    const send = m.querySelector("#mksend");
+    const pickers = [
+      { box: m.querySelector("#wpicks"), find: m.querySelector("#wfind"), list: their, set: want, count: (c) => theirs.get(c.id) },
+      { box: m.querySelector("#gpicks"), find: m.querySelector("#gfind"), list: mine, set: give, count: (c) => counts.get(c.id) }
+    ];
     function paint() {
-      const qs = norm(find.value.trim());
-      const list = mine.filter((c) => (!dupesOnly || counts.get(c.id) > 1) && (!qs || norm(c.name).includes(qs) || norm(c.partner_name).includes(qs)));
-      box.innerHTML = list.map((c) => `<button type="button" class="mk-pick r-${c.rarity}" data-id="${c.id}" aria-pressed="${chosen === c.id}"><b>${esc(c.name)}</b><small>${c.kind === "skipper" ? "skipper" : "bateau"} · ${esc(RAR_LABEL[c.rarity])}${counts.get(c.id) > 1 ? " · ×" + counts.get(c.id) : ""}</small></button>`).join("") || '<p class="empty">Aucune carte ne correspond.</p>';
+      pickers.forEach((P) => {
+        const qs = norm(P.find.value.trim());
+        const rows = P.list.filter((c) => P.set.has(c.id) || !qs || norm(c.name).includes(qs) || norm(c.partner_name).includes(qs));
+        P.box.innerHTML = rows.map((c) => `<button type="button" class="mk-pick r-${c.rarity}" data-id="${c.id}" aria-pressed="${P.set.has(c.id)}"><b>${esc(c.name)}</b><small>${c.kind === "skipper" ? "skipper" : "bateau"} · ${esc(RAR_LABEL[c.rarity])}${P.count(c) > 1 ? " · ×" + P.count(c) : ""}</small></button>`).join("") || '<p class="empty">Aucune carte ne correspond.</p>';
+      });
+      const g = give.size, w = want.size;
+      m.querySelector("#mksum").textContent = g || w ? `${g} ${plural(g, "carte", "cartes")} contre ${w} ${plural(w, "carte", "cartes")}` : "";
+      send.disabled = !(g && w);
     }
     paint();
-    find.addEventListener("input", paint);
-    m.querySelectorAll("[data-f]").forEach((b) => b.addEventListener("click", () => {
-      dupesOnly = b.dataset.f === "dupes";
-      m.querySelectorAll("[data-f]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-      paint();
-    }));
-    box.addEventListener("click", (ev) => {
-      const b = ev.target.closest(".mk-pick"); if (!b) return;
-      chosen = Number(b.dataset.id); send.disabled = false;
-      m.querySelector("#mkchosen").innerHTML = "Tu donnes : " + cardLabel(chosen);
-      paint();
+    pickers.forEach((P) => {
+      P.find.addEventListener("input", paint);
+      P.box.addEventListener("click", (ev) => {
+        const b = ev.target.closest(".mk-pick"); if (!b) return;
+        const id = Number(b.dataset.id);
+        if (P.set.has(id)) P.set.delete(id);
+        else if (P.set.size >= 5) return toast("5 cartes au maximum de chaque côté.", true);
+        else P.set.add(id);
+        paint();
+      });
     });
     m.querySelector("#mkno").addEventListener("click", () => m.remove());
     m.addEventListener("click", (ev) => { if (ev.target === m) m.remove(); });
     send.addEventListener("click", async () => {
-      if (!chosen) return;
+      if (!give.size || !want.size) return;
       send.disabled = true;
       try {
-        const tid = await rpc("propose_trade", { p_from: S.me.id, p_to: playerId, p_give: chosen, p_want: cardId });
+        let tid;
+        if (S.mk.multi) tid = await rpc("propose_trade_multi", { p_from: S.me.id, p_to: playerId, p_give: [...give], p_want: [...want] });
+        else if (give.size === 1 && want.size === 1) tid = await rpc("propose_trade", { p_from: S.me.id, p_to: playerId, p_give: [...give][0], p_want: [...want][0] });
+        else throw new Error("Pour échanger plusieurs cartes, lance 15_marche_multi.sql dans Supabase.");
         appPush({ trade_id: tid });
         m.remove(); S.mk.view = "trades"; S.mk.playerId = null;
         toast("Demande envoyée à " + to.first_name + " !"); await refresh();
@@ -908,8 +948,8 @@
     const m = g.mode || "", who = g.test ? (playerById(Number(g.test)) || {}).first_name : null;
     const state = m === "on" ? "<b>Jeux ouverts</b> pour tout le monde." : m === "test" ? `<b>Test</b> : seulement ${esc(who || "?")} voit l'onglet. Rien n'est enregistré.` : "Jeux fermés.";
     const optP = S.players.map((p) => `<option value="${p.id}" ${(g.test ? String(p.id) === String(g.test) : S.me && p.id === S.me.id) ? "selected" : ""}>Test : seulement ${esc(p.first_name)}</option>`).join("");
-    const best = (g.best || []).map((b) => `${b.game === "routeur" ? "Routeur" : "Amarre"} : ${esc(b.name)}, ${b.score}`).join("<br>") || "Aucun record.";
-    const all = (g.scores || []).map((x) => `${x.game === "routeur" ? "Routeur" : "Amarre"} · ${esc(x.name)} : ${x.score}`).join("<br>");
+    const best = (g.best || []).map((b) => `${gameName(b.game)} : ${esc(b.name)}, ${gameVal(b.game, b.score)}`).join("<br>") || "Aucun record.";
+    const all = (g.scores || []).map((x) => `${gameName(x.game)} · ${esc(x.name)} : ${gameVal(x.game, x.score)}`).join("<br>");
     return `<p class="log">${state}</p>
       <div class="field"><label for="gm">Mode</label><select id="gm"><option value="" ${m === "" ? "selected" : ""}>Fermé</option><option value="on" ${m === "on" ? "selected" : ""}>Autorisé (tout le monde)</option><option value="test" ${m === "test" ? "selected" : ""}>Test (un seul joueur)</option></select></div>
       <div class="field"><label for="gt">Pour le test</label><select id="gt">${optP}</select></div>
@@ -1038,65 +1078,101 @@
     return `<div class="com-banner">${comFlag(40)}<div><b>Mode communiste${S.event.test ? " (test : toi seul le vois)" : ""}</b><span>${esc(msg)}</span></div>
       <button class="pir-music" data-action="music" aria-label="Musique">${Music.isOn() ? "♪" : "♪̸"}</button></div>`;
   }
-  // ---------- Onglet Jeu : le routeur et le lancer d'amarre ----------
+  // ---------- Onglet Jeu : le routeur et le lancer d'amarre (plein écran, en paysage) ----------
   const GAMES = [
-    ["routeur", "Le routeur", "Choisis la route de Saint-Malo à Pointe-à-Pitre en évitant les dépressions, les baleines et les paquebots."],
+    ["routeur", "Le routeur", "Choisis la route de Saint-Malo à Pointe-à-Pitre en évitant les dépressions, les baleines et les paquebots. Le record à battre, c'est le meilleur temps du niveau."],
     ["amarre", "Le lancer d'amarre", "Passe le cordage sur le taquet. Chaque réussite rend le prochain lancer plus difficile."]
   ];
+  const fmtDur = (min) => Math.floor(min / 1440) + " j " + String(Math.round((min % 1440) / 60) % 24).padStart(2, "0") + " h";
+  const gameName = (g) => g === "amarre" ? "Amarre" : "Routeur " + g.slice(-1);
+  const gameVal = (g, v) => v == null ? "—" : g === "amarre" ? String(v) : fmtDur(v);
+  const hhmm = (iso) => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
   function jeuHTML() {
     const head = '<h1>Jeu</h1>';
     if (!isGames()) return `${head}<p class="empty">Les jeux ne sont pas ouverts pour le moment.</p>`;
-    const g = S.games, test = g.mode === "test", open = S.jeu.open;
-    if (open) {
-      const def = GAMES.find((x) => x[0] === open);
-      return `${head}${test ? '<p class="jeu-test">Mode test : rien n\'est enregistré et aucun booster n\'est donné.</p>' : ""}
-        <div class="jeu-bar"><button class="btn ghost small" data-action="jeu-close">← Les jeux</button><b>${esc(def[1])}</b></div>
-        <iframe id="jf" class="jeu-frame" src="jeux/${open}.html" title="${esc(def[1])}" style="height:${S.jeu.h || 640}px"></iframe>`;
-    }
-    const cards = GAMES.map(([k, nm, txt]) => {
+    const g = S.games, test = g.mode === "test";
+    const recLine = (k, label) => {
       const x = (g.games && g.games[k]) || {};
-      const rec = x.score != null ? `Record : <b>${x.score}</b> par ${esc(x.holder || "?")}` : "Aucun record pour le moment";
-      const mine = x.mine != null ? ` · ton meilleur : <b>${x.mine}</b>` : "";
-      return `<div class="panel jeu-card"><h3>${esc(nm)}</h3><p class="muted">${esc(txt)}</p><p class="jeu-rec">${rec}${mine}</p>
+      if (x.score == null) return `<div class="jeu-line"><span>${label}</span><span>aucun record</span></div>`;
+      return `<div class="jeu-line"><span>${label}</span><span><b>${gameVal(k, x.score)}</b> · ${esc(x.holder || "?")}${x.mine != null ? ` · toi ${gameVal(k, x.mine)}` : ""}</span></div>`;
+    };
+    const cards = GAMES.map(([k, nm, txt]) => {
+      const lines = k === "routeur" ? [1, 2, 3, 4].map((n) => recLine("routeur" + n, "Niveau " + n)).join("") : recLine("amarre", "Record");
+      return `<div class="panel jeu-card"><h3>${esc(nm)}</h3><p class="muted">${esc(txt)}</p><div class="jeu-rec">${lines}</div>
         <button class="btn" data-action="jeu-open" data-game="${k}">Jouer</button></div>`;
     }).join("");
-    return `${head}${test ? '<p class="jeu-test">Mode test : tu es seul à voir les jeux. Rien n\'est enregistré et aucun booster n\'est donné.</p>' : ""}
-      <p class="muted" style="margin-bottom:12px">Bats le record d'un autre joueur et gagne un booster. Battre ton propre record ne rapporte rien.</p>${cards}`;
+    const wait = (g.next_at ? `<p class="jeu-test">Booster du routeur niveau 1 : le prochain sera possible à ${hhmm(g.next_at)}.</p>` : "") + (g.unlocked === false ? '<p class="jeu-test">Bats d\'abord le record d\'un joueur au niveau 1 du routeur : tu pourras ensuite gagner des boosters aux niveaux 2, 3, 4 et à l\'amarre.</p>' : "");
+    return `${head}${test ? '<p class="jeu-test">Mode test : tu es seul à voir les jeux. Rien n\'est enregistré et aucun booster n\'est donné.</p>' : ""}${wait}
+      <p class="muted" style="margin-bottom:12px">Bats le record d'un autre joueur et gagne un booster de 3 cartes. Battre ton propre record ne rapporte rien. Commence par le niveau 1 du routeur : une fois que tu y as battu un record, tu peux aussi gagner des boosters aux niveaux 2, 3, 4 et à l'amarre. Au niveau 1, il faut attendre 1 heure entre deux boosters. Les jeux se jouent en paysage.</p>${cards}`;
+  }
+  function gameFrame() { const f = document.getElementById("jf"); return f && f.contentWindow ? f : null; }
+  function sendInit() {
+    const f = gameFrame(); if (!f || !S.games) return;
+    try { f.contentWindow.postMessage({ rhum: "init", games: S.games.games || {}, next_at: S.games.next_at || null, test: S.games.mode === "test" }, "*"); } catch (e) {}
+  }
+  function openGame(game) {
+    closeGame(true);
+    S.jeu.open = game;
+    const def = GAMES.find((x) => x[0] === game);
+    const o = document.createElement("div");
+    o.className = "jeu-full"; o.id = "jfull";
+    o.innerHTML = `<iframe id="jf" src="jeux/${game}.html" title="${esc(def[1])}" allow="fullscreen"></iframe>
+      <button class="jeu-x" aria-label="Quitter le jeu">×</button>
+      ${S.games && S.games.mode === "test" ? '<div class="jeu-badge">Test : rien n\'est enregistré</div>' : ""}
+      <div class="jeu-rot"><div class="jeu-rot-i">↻</div><p>Tourne ton téléphone en mode paysage</p></div>`;
+    document.body.appendChild(o);
+    o.querySelector(".jeu-x").addEventListener("click", () => closeGame());
+    try {
+      const req = o.requestFullscreen || o.webkitRequestFullscreen;
+      if (req) { const pr = req.call(o, { navigationUI: "hide" }); if (pr && pr.then) pr.then(() => { try { screen.orientation && screen.orientation.lock && screen.orientation.lock("landscape").catch(() => {}); } catch (e) {} }).catch(() => {}); }
+    } catch (e) {}
+  }
+  async function closeGame(silent) {
+    const o = document.getElementById("jfull"); if (!o) return;
+    try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {}); } catch (e) {}
+    try { screen.orientation && screen.orientation.unlock && screen.orientation.unlock(); } catch (e) {}
+    o.remove(); S.jeu.open = null;
+    if (silent) return;
+    try { await refresh(); } catch (e) {}
+    render();
   }
   window.addEventListener("message", async (ev) => {
     const d = ev.data;
-    if (!d || typeof d !== "object" || !d.rhum || S.tab !== "jeu" || !S.jeu.open) return;
-    const f = document.getElementById("jf");
+    if (!d || typeof d !== "object" || !d.rhum || !S.jeu.open) return;
+    const f = gameFrame();
     if (!f || ev.source !== f.contentWindow) return;
-    if (d.rhum === "h") { const h = Math.max(400, Math.min(1800, Math.round(Number(d.h) || 640))); S.jeu.h = h; f.style.height = h + "px"; return; }
-    if (d.rhum === "score" && d.game === S.jeu.open) await submitGame(d.game, Math.round(Number(d.score)));
+    if (d.rhum === "ready") { sendInit(); return; }
+    if (d.rhum === "score" && String(d.game).indexOf(S.jeu.open) === 0) await submitGame(d.game, Math.round(Number(d.score)));
   });
   async function submitGame(game, score) {
-    if (!(score >= 0)) return;
+    if (!(score >= 1)) return;
     let r;
     try { r = await rpc("game_submit", { p_player: S.me.id, p_game: game, p_score: score }); } catch (e) { toast(e.message, true); return; }
     if (S.games && S.games.games && S.games.games[game]) {
       const x = S.games.games[game]; x.mine = r.mine;
       if (r.mode === "on" && r.record) { x.score = r.score; x.holder = S.me.first_name; }
     }
+    if (S.games) { S.games.next_at = r.next_at || S.games.next_at || null; if (r.mode === "on" && r.record && game === "routeur1" && !r.locked && r.holder === S.me.first_name) S.games.unlocked = S.games.unlocked || r.booster || r.cooldown; }
+    sendInit();
     if (r.booster) showGameWin(game, r);
-    else if (r.record && r.mode === "on") toast(r.holder === S.me.first_name && r.score === r.best ? "C'est ton record." : "Score enregistré.");
+    else if (r.locked) toast("Record battu ! Pour gagner un booster ici, bats d'abord un record au niveau 1 du routeur.");
+    else if (r.cooldown) toast("Record battu ! Le prochain booster du niveau 1 sera possible à " + hhmm(r.next_at) + ".");
+    else if (r.record && r.mode === "on") toast("Score enregistré.");
     else if (r.mode === "test" && r.record) toast("Test : record battu, booster à gagner en vrai.");
   }
   function showGameWin(game, r) {
     const m = document.createElement("div");
     m.className = "modal"; m.setAttribute("role", "dialog");
-    const nm = game === "routeur" ? "le routeur" : "le lancer d'amarre";
     const test = r.mode === "test";
     m.innerHTML = `<div class="modal-in"><h2>Record battu !</h2>
-      <p>Tu as fait ${r.score} points à ${nm}${r.holder && !test ? "" : ""}.</p>
-      <p>${test ? "En vrai, tu gagnerais un booster." : "Un booster t'attend dans l'onglet Boosters."}</p>
+      <p>${esc(gameName(game))} : ${esc(gameVal(game, r.score))}.</p>
+      <p>${test ? "En vrai, tu gagnerais un booster de 3 cartes." : "Un booster de 3 cartes t'attend dans l'onglet Boosters." + (game === "routeur1" ? " Le prochain booster du niveau 1 sera possible dans 1 heure." : "")}</p>
       <button class="btn" id="gw-go">${test ? "Continuer" : "Voir mes boosters"}</button> <button class="btn ghost" id="gw-no">Continuer à jouer</button></div>`;
     document.body.appendChild(m);
     m.querySelector("#gw-no").addEventListener("click", () => m.remove());
     m.querySelector("#gw-go").addEventListener("click", async () => {
       m.remove(); if (test) return;
-      S.jeu.open = null; S.tab = "boosters"; try { await refresh(); } catch (e) {} render(); window.scrollTo(0, 0);
+      await closeGame(true); S.tab = "boosters"; try { await refresh(); } catch (e) {} render(); window.scrollTo(0, 0);
     });
   }
   function maybeShowComIntro() {
@@ -1372,7 +1448,7 @@
       S.tab = "album"; await doStreak(); await refresh(true); maybeInvite();
     },
     switch() { S.me = null; S.event = { mode: null }; S.letter = null; S.recap = []; Music.stop(); try { localStorage.removeItem("rhum_player"); localStorage.removeItem("rhum_pin"); } catch (e) {} S.run = null; render(); },
-    async tab(el) { S.tab = el.dataset.tab; S.run = null; S.jeu.open = null; render(); window.scrollTo(0, 0); if (S.tab === "patrimoine") { await loadCom(); render(); Music.start(); }
+    async tab(el) { S.tab = el.dataset.tab; S.run = null; render(); window.scrollTo(0, 0); if (S.tab === "patrimoine") { await loadCom(); render(); Music.start(); }
       if (S.tab === "marche" || S.tab === "pillage") { try { await loadMarket(); if (S.tab === "marche" || S.tab === "pillage") render(); } catch (e) {} } },
     filter(el) { S.filters[el.dataset.key] = el.dataset.val; render(); },
     "toggle-missing"() { S.filters.missing = !S.filters.missing; render(); },
@@ -1421,12 +1497,12 @@
     "mk-back"() { S.mk.playerId = null; render(); },
     "mk-want"(el) { openCompose(Number(el.dataset.player || S.mk.playerId), Number(el.dataset.card)); },
     async "mk-accept"(el) {
-      const r = await rpc("respond_trade", { p_player: S.me.id, p_trade: Number(el.dataset.id), p_accept: true });
+      const r = await rpc(S.mk.multi ? "respond_trade_multi" : "respond_trade", { p_player: S.me.id, p_trade: Number(el.dataset.id), p_accept: true });
       appPush({ trade_id: Number(el.dataset.id) });
-      toast(r === "accepted" ? "C'est fait, la carte est dans ton album !" : "Échange impossible : une des cartes n'est plus disponible.", r !== "accepted");
+      toast(r === "accepted" ? "C'est fait, les cartes sont dans ton album !" : "Échange impossible : une des cartes n'est plus disponible.", r !== "accepted");
       await refresh();
     },
-    async "mk-decline"(el) { await rpc("respond_trade", { p_player: S.me.id, p_trade: Number(el.dataset.id), p_accept: false }); appPush({ trade_id: Number(el.dataset.id) }); toast("Demande refusée."); await refresh(); },
+    async "mk-decline"(el) { await rpc(S.mk.multi ? "respond_trade_multi" : "respond_trade", { p_player: S.me.id, p_trade: Number(el.dataset.id), p_accept: false }); appPush({ trade_id: Number(el.dataset.id) }); toast("Demande refusée."); await refresh(); },
     async "mk-cancel"(el) { await rpc("cancel_trade", { p_player: S.me.id, p_trade: Number(el.dataset.id) }); toast("Demande annulée."); await refresh(); },
     rules() {
       const m = document.createElement("div");
@@ -1560,8 +1636,7 @@
         toast("Carte fétiche enregistrée."); await loadAdmin(); render();
       } catch (e) { toast(e.message, true); }
     },
-    async "jeu-open"(el) { S.jeu.open = el.dataset.game; S.jeu.h = 640; render(); window.scrollTo(0, 0); },
-    async "jeu-close"() { S.jeu.open = null; try { await refresh(); } catch (e) {} render(); },
+    async "jeu-open"(el) { openGame(el.dataset.game); },
     async "set-games"() {
       const mode = document.getElementById("gm").value, tp = document.getElementById("gt").value;
       try { await rpc("admin_games_set", { p_code: S.adminCode, p_mode: mode, p_test_player: tp ? Number(tp) : null }); toast(mode === "on" ? "Jeux ouverts pour tout le monde." : mode === "test" ? "Jeux en test." : "Jeux fermés."); await loadAdmin(); await loadGames(); render(); } catch (e) { toast(e.message, true); }
@@ -1789,7 +1864,9 @@
       const sig = () => JSON.stringify(S.flash.map((f) => [f.id, f.winner_player]));
       const before = sig();
       try { await loadFlash(); } catch (e) { return; }
-      if (sig() !== before) render();
+      let changed = sig() !== before;
+      try { if (await pollTrades()) { changed = true; toast("Nouvelle demande d'échange dans le Village."); } } catch (e) {}
+      if (changed) render();
     }, 15000);
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden && S.me && !S.overlay && !S.run && S.tab !== "admin" && !(S.tab === "jeu" && S.jeu.open)) refresh();

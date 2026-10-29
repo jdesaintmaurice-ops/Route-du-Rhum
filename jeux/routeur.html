@@ -34,6 +34,31 @@
   th { color: var(--muted); font-weight: 600; font-size: 14px; }
   .ok { color: var(--good); } .ko { color: var(--bad); }
   .verdict { font: 700 28px/1.1 var(--display); }
+  /* Dans l'app : plein écran paysage, la carte à gauche, les commandes à droite */
+  body.emb { padding: 6px 10px; height: 100vh; box-sizing: border-box; overflow: hidden; }
+  body.emb main { max-width: none; height: 100%; grid-template-columns: minmax(0, 1fr) 260px; grid-template-rows: auto auto minmax(0, 1fr); gap: 8px 10px; }
+  body.emb header { grid-column: 2; grid-row: 1; }
+  body.emb header h1, body.emb header .quest { display: none; }
+  body.emb header .row { margin-top: 0 !important; }
+  body.emb header .row button { padding: 8px 14px; font-size: 16px; }
+  body.emb header .muted { font-size: 13px; line-height: 1.3; margin-top: 6px !important; }
+  body.emb main > section:nth-of-type(1) { grid-column: 1; grid-row: 1 / 4; padding: 8px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  body.emb #mapwrap { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  body.emb svg#map { width: auto; max-width: 100%; max-height: 100%; height: 100%; }
+  body.emb main > section:nth-of-type(1) > div:nth-child(2) { margin-top: 4px !important; display: flex; gap: 8px; align-items: center; }
+  body.emb main > section:nth-of-type(1) > div:nth-child(2) label { white-space: nowrap; font-size: 13px; }
+  body.emb main > section:nth-of-type(2) { grid-column: 2; grid-row: 2; padding: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  body.emb main > section:nth-of-type(2) > .row { display: contents; }
+  body.emb main > section:nth-of-type(2) > .row:first-child > div:first-child { grid-column: 1 / 3; display: flex; align-items: baseline; gap: 8px; }
+  body.emb main > section:nth-of-type(2) .row:last-child { display: contents; }
+  body.emb main > section:nth-of-type(2) button { padding: 9px 6px; font-size: 15px; }
+  body.emb #go { grid-column: 1 / 3; }
+  body.emb #clock { grid-column: 1 / 3; }
+  body.emb main > section:nth-of-type(3) { grid-column: 2; grid-row: 3; padding: 10px; overflow: auto; min-height: 0; }
+  body.emb .time { font-size: 24px; }
+  body.emb .legend { display: none; }
+  body.emb .verdict { font-size: 22px; }
+  body.emb table { font-size: 14px; }
 </style>
 
 <main>
@@ -125,6 +150,11 @@
     }
     return { done: false, t: t, out: out, core: core, top: top };
   }
+  window.addEventListener("message", function (e) {
+    var d = e.data; if (!d || d.rhum !== "init" || !d.games) return;
+    recs = {}; Object.keys(d.games).forEach(function (k) { var m = /^routeur(\d)$/.exec(k); if (m && d.games[k].score) recs[+m[1] - 1] = { min: d.games[k].score, holder: d.games[k].holder, mine: d.games[k].mine }; });
+    if (typeof tabs === "function") tabs();
+  });
   window.__rt = { simulate: simulate, windAt: windAt, lv: function (i) { SC = LEVELS[i]; }, L: LEVELS };
 
   // ---------- Dessin de la carte ----------
@@ -230,22 +260,26 @@
     refresh2(); requestAnimationFrame(frame);
   };
   function refresh2() { document.getElementById("undo").disabled = true; document.getElementById("clear").disabled = true; document.getElementById("go").disabled = true; }
+  // Records reçus de l'app : minutes du meilleur temps de chaque niveau, et qui le détient
+  var recs = {};
+  function objective(i) { var rc = recs[i]; return rc && rc.min ? { min: rc.min, rec: true, holder: rc.holder } : { min: Math.round(LEVELS[i].target * 1440), rec: false }; }
   function finish(res) {
-    var d = res.t / 24, ok = res.done && d <= SC.target;
-    var pts = ok ? (lv + 1) * 1000 + Math.round((SC.target - d) * 200) : 0;
-    if (ok) { won[lv] = true; if (window.rhumScore) window.rhumScore("routeur", pts); } else fails[lv]++;
-    document.getElementById("verdict").innerHTML = ok ? '<span class="ok">Réussi.</span>' : res.hit ? '<span class="ko">Collision avec ' + res.hit + '.</span>' : '<span class="ko">Raté.</span>';
-    document.getElementById("tb").innerHTML = "<tr><td>Votre route</td><td>" + (res.done ? fmtT(res.t) : res.hit ? "stoppé à " + fmtT(res.t) : "pas arrivé") + "</td></tr><tr><td>Objectif</td><td>moins de " + fmtT(SC.target * 24) + "</td></tr>";
+    var ob = objective(lv), mins = Math.max(1, Math.round(res.t * 60)), ok = res.done && (ob.rec ? mins < ob.min : mins <= ob.min);
+    if (res.done && window.rhumScore) window.rhumScore("routeur" + (lv + 1), mins);
+    if (ok) won[lv] = true; else fails[lv]++;
+    document.getElementById("verdict").innerHTML = ok ? '<span class="ok">' + (ob.rec ? "Record battu !" : "Réussi.") + "</span>" : res.hit ? '<span class="ko">Collision avec ' + res.hit + ".</span>" : '<span class="ko">Raté.</span>';
+    document.getElementById("tb").innerHTML = "<tr><td>Votre route</td><td>" + (res.done ? fmtT(res.t) : res.hit ? "stoppé à " + fmtT(res.t) : "pas arrivé") + "</td></tr><tr><td>" + (ob.rec ? "Record" + (ob.holder ? " (" + ob.holder + ")" : "") : "Objectif") + "</td><td>" + (ob.rec ? fmtT(ob.min / 60) : "moins de " + fmtT(ob.min / 60)) + "</td></tr>";
     document.getElementById("again").textContent = "Réessayer";
     var nx = document.getElementById("next"); nx.hidden = !(ok && lv < 3);
-    document.getElementById("note").textContent = ok ? "Score : " + pts + (lv === 3 ? ". Les quatre niveaux sont passés." : "") : "";
+    document.getElementById("note").textContent = ok && lv === 3 ? "Les quatre niveaux sont passés." : "";
     document.getElementById("res").hidden = false; document.getElementById("clock").hidden = true;
     tabs(); draw(simT);
   }
   function setLevel(i) { lv = i; SC = LEVELS[i]; boat = null; wps = []; simT = 0; day.value = 0; document.getElementById("res").hidden = true; document.getElementById("clock").hidden = true; tabs(); refresh(); }
   function tabs() {
     document.getElementById("lvls").innerHTML = LEVELS.map(function (L, i) { return '<button class="' + (i === lv ? "" : "ghost") + '" data-l="' + i + '">' + (i + 1) + (won[i] ? " ✓" : "") + "</button>"; }).join("");
-    document.getElementById("lname").textContent = SC.name + " · objectif moins de " + fmtT(SC.target * 24);
+    var ob = objective(lv);
+    document.getElementById("lname").textContent = SC.name + " · " + (ob.rec ? "record à battre : " + fmtT(ob.min / 60) + (ob.holder ? " (" + ob.holder + ")" : "") : "objectif : moins de " + fmtT(ob.min / 60));
   }
   document.getElementById("lvls").addEventListener("click", function (e) { var b = e.target.closest("button"); if (b && !playing) setLevel(+b.dataset.l); });
   document.getElementById("next").onclick = function () { setLevel(lv + 1); };
@@ -257,9 +291,8 @@
 // Dans l'app : le jeu envoie son score et sa hauteur à la page qui l'affiche. Seul, il ne fait rien de plus.
 (function () {
   if (window.parent === window) return;
+  document.body.classList.add("emb");
   window.rhumScore = function (g, s) { parent.postMessage({ rhum: "score", game: g, score: s }, "*"); };
-  function h() { parent.postMessage({ rhum: "h", h: document.documentElement.scrollHeight }, "*"); }
-  try { new ResizeObserver(h).observe(document.body); } catch (e) {}
-  h();
+  parent.postMessage({ rhum: "ready" }, "*");
 })();
 </script>
