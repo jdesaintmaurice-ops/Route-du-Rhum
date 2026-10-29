@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Test des vidéos</title>
+<style>
+  body { font: 16px/1.45 system-ui, sans-serif; margin: 0; padding: 16px; background: #111; color: #eee; }
+  main { max-width: 720px; margin: 0 auto; display: grid; gap: 28px; }
+  h1 { margin: 0; font-size: 22px; }
+  h2 { margin: 0 0 8px; font-size: 17px; }
+  .box { aspect-ratio: 16 / 9; background: #000; border-radius: 8px; overflow: hidden; }
+  .box iframe { width: 100%; height: 100%; border: 0; display: block; }
+  small, .src { color: #aaa; font-size: 13px; word-break: break-all; }
+  a { color: #7cc4ff; }
+  input { width: 100%; box-sizing: border-box; padding: 8px; margin: 6px 0; font: 14px monospace; background: #222; color: #eee; border: 1px solid #444; border-radius: 6px; }
+  button { padding: 8px 14px; font: 600 14px system-ui; border-radius: 6px; border: 0; background: #e5554d; color: #fff; cursor: pointer; }
+  .ok { color: #6fd08c; } .ko { color: #f08a83; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Test des vidéos incrustées</h1>
+  <p>Pour chaque vidéo, regarde si le lecteur s'affiche et si la lecture démarre. Si une vidéo INA reste vide, colle dans le champ en dessous l'adresse « src » du code « Intégrer » de la page INA (bouton Partager), puis « Essayer ».</p>
+  <div id="liste"></div>
+</main>
+
+<script>
+var HASH = "1b0bd203fbcd702f9bc9b10ac3d0fc21";
+function ina(id) { return "https://player.ina.fr/player/embed/" + id + "/1/" + HASH + "/wide/1"; }
+
+var VIDEOS = [
+  { titre: "Barnier (YouTube)", src: "https://www.youtube.com/embed/MmM8GKj5lyE",
+    page: "https://www.youtube.com/watch?v=MmM8GKj5lyE" },
+  { titre: "Twirling (INA)", src: ina("G3956346_001_031"),
+    page: "https://www.ina.fr/ina-eclaire-actu/video/g3956346_001_031/on-a-mouille-le-maillot-le-twirling" },
+  { titre: "Bière (INA)", src: ina("LL00001246912"),
+    page: "https://www.ina.fr/ina-eclaire-actu/video/ll00001246912/fabrique-ta-biere-toi-meme" }
+];
+
+var liste = document.getElementById("liste");
+VIDEOS.forEach(function (v, n) {
+  var s = document.createElement("section");
+  s.innerHTML = '<h2></h2><div class="box"><iframe allow="fullscreen; autoplay; encrypted-media" allowfullscreen loading="lazy"></iframe></div>' +
+    '<p class="src"></p><p><a target="_blank" rel="noopener">Ouvrir la vidéo sur son site</a></p>' +
+    '<input type="text" placeholder="Autre adresse d\'incrustation à essayer (https://…)"><button type="button">Essayer</button>';
+  s.querySelector("h2").textContent = (n + 1) + ". " + v.titre;
+  var f = s.querySelector("iframe"), src = s.querySelector(".src"), inp = s.querySelector("input");
+  function charge(u) { f.src = u; src.textContent = "Adresse testée : " + u; }
+  charge(v.src);
+  s.querySelector("a").href = v.page;
+  s.querySelector("button").addEventListener("click", function () { if (/^https:\/\//.test(inp.value.trim())) charge(inp.value.trim()); });
+  liste.appendChild(s);
+});
+</script>
+</body>
+</html>
