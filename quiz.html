@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Quiz final n°1</title>
+<title>Quiz final</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <style>
 :root {
@@ -30,6 +30,7 @@ h1 { font: 700 26px/1 var(--display); text-transform: uppercase; letter-spacing:
 .screen { background: #000; border-radius: 10px; overflow: hidden; line-height: 0; }
 .screen img { width: 100%; height: auto; display: block; }
 .screen iframe { width: 100%; aspect-ratio: 16 / 9; border: 0; display: block; }
+.screen video { width: 100%; height: auto; max-height: 75vh; display: block; background: #000; }
 .screen .note { line-height: 1.4; padding: 16px; }
 .q { font: 700 44px/1 var(--display); text-transform: uppercase; letter-spacing: .06em; margin: 0; text-align: center; color: var(--accent); }
 .choices { display: grid; gap: 10px; }
@@ -70,7 +71,7 @@ h1 { font: 700 26px/1 var(--display); text-transform: uppercase; letter-spacing:
 </head>
 <body>
 <main id="main">
-  <header><h1>Quiz final n°1</h1><span class="tc" id="tc"></span><button type="button" id="son" class="son" aria-pressed="true">Son : oui</button></header>
+  <header><h1>Quiz final</h1><span class="tc" id="tc"></span><button type="button" id="son" class="son" aria-pressed="true">Son : oui</button></header>
   <div class="bar"><i id="prog"></i></div>
   <div id="app" class="stage"></div>
 </main>
@@ -78,7 +79,8 @@ h1 { font: 700 26px/1 var(--display); text-transform: uppercase; letter-spacing:
 <script>
 /* ===== Réglages ===== */
 var DELAI_IMAGE = 2000;      // durée de l'image barrée seule (ms)
-var ATTENTE_SUIVANT = 10;    // secondes avant de pouvoir passer à la question suivante
+var ATTENTE_SUIVANT = 10;    // secondes avant de pouvoir passer à la question suivante (questions avec vidéo)
+var ATTENTE_IMAGE = 3;       // idem pour les questions sans vidéo (le temps de lire le titre)
 var MUSIQUE = "musique.mp3"; // fichier à mettre à côté de quiz.html
 var EMB = /[?&]emb=1/.test(location.search); // ouvert depuis l'application (le score est alors envoyé à l'appli)
 if (EMB) document.body.classList.add("emb");
@@ -90,7 +92,7 @@ function inaEmbed(id, debut) { return "https://player-hub.ina.fr/embed/" + id + 
 /* ===== Banque de questions =====
    img   : nom de base des images dans img/quiz/ (NOM-masque.jpg)
    bonne / faux : bonne réponse et fausses réponses
-   video : { ina: "Media ID", debut: secondes, page: "adresse de la page INA" } ou { yt: "ID YouTube", debut: secondes, page: "…" }
+   video : null (image avec le titre), { mp4: "videos/fichier.mp4", debut: secondes }, { ina: "Media ID", debut: secondes, page: "adresse de la page INA" } ou { yt: "ID YouTube", debut: secondes, page: "…" }
    Les questions non utilisées restent ici pour un prochain quiz. */
 var BANQUE = {
   tornade: { img: "tornade", bonne: "Chasseur de tornades", faux: ["Vendeur d'Auto-Tune", "Influenceur Waze"],
@@ -106,27 +108,35 @@ var BANQUE = {
     sujet: "Le diacre",
     video: { ina: "3299030001022", debut: 57, page: "https://www.ina.fr/ina-eclaire-actu/video/3299030001022/football-la-clericus-cup" } },
 
-  /* --- Pour un prochain quiz --- */
-  barnier: { img: "barnier", bonne: "Michel Barnier", faux: ["Michel Rocard", "Michel Noir"], sujet: "1971 : Michel Barnier, 20 ans et déjà impliqué",
+  /* --- Quiz final : les 7 questions de la soirée --- */
+  comedienne: { img: "marini", bonne: "Comédienne", faux: ["Carencé", "Chewbacca épilé"], sujet: "Marilu Marini, groupe TSE",
+    video: { mp4: "videos/comedienne.mp4", debut: 0 } },
+  mamie: { img: "marinette", bonne: "Super mamie d'Alsace", faux: ["Professeure de rock", "Libertine bourguignonne"], sujet: "Marinette Salmon", video: null },
+  kasparian: { img: "kasparian", bonne: "Coadjuteur du Patriarche arménien d'Istanbul", faux: ["Directeur général du Crédit Lyonnais", "Membre de la secte des Illuminati"], sujet: "Vartalet Chenork Kasparian", video: null },
+  guerin: { img: "sorcier", bonne: "Sorcier", faux: ["Médecin", "Mentaliste"], sujet: "Patrick Guérin : le sorcier qui part dans l'astral",
+    video: { ina: "VDD10011537", debut: 0, page: "https://www.ina.fr/ina-eclaire-actu/video/vdd10011537/le-sorcier-qui-part-dans-l-astral" } },
+  barnier: { img: "barnier", bonne: "Michel Barnier", faux: ["Général Leclerc", "Grand-père de Baptiste"], sujet: "1971 : Michel Barnier, 20 ans et déjà impliqué",
     video: { yt: "MmM8GKj5lyE", debut: 0, page: "https://www.youtube.com/watch?v=MmM8GKj5lyE" } },
+  hugo: { img: "biere", bonne: "Brasseur amateur", faux: ["Adhérent « Calvitie, ça suffit »", "Herbologue"], sujet: "Alain Hugo : fabrique ta bière toi-même",
+    video: { ina: "LL00001246912", debut: 0, page: "https://www.ina.fr/ina-eclaire-actu/video/ll00001246912/fabrique-ta-biere-toi-meme" } },
+  calculatrice: { img: "calculatrice", bonne: "Responsable calculatrices", faux: ["Responsable magasin", "Responsable papeterie"],
+    sujet: "Sylvie Laboureux : la triche sur calculatrices",
+    video: { ina: "3102349001017", debut: 0, page: "https://www.ina.fr/ina-eclaire-actu/video/3102349001017/baccalaureat-attention-a-la-triche-sur-calculatrices" } },
+
+  /* --- Autres questions, pour un prochain quiz --- */
   biere: { img: "biere", bonne: "Brasseur amateur", faux: ["Cidriculteur amateur", "Vigneron amateur"], sujet: "Fabrique ta bière toi-même",
     video: { ina: "LL00001246912", debut: 0, page: "https://www.ina.fr/ina-eclaire-actu/video/ll00001246912/fabrique-ta-biere-toi-meme" } },
-  calculatrice: { img: "calculatrice", bonne: "Responsable calculatrices, Papeterie Lamartine", faux: ["Responsable informatique, Librairie du Lycée", "Responsable rayon scolaire, Papeterie Centrale"],
-    sujet: "Baccalauréat : attention à la triche sur calculatrices",
-    video: { ina: "3102349001017", debut: 0, page: "https://www.ina.fr/ina-eclaire-actu/video/3102349001017/baccalaureat-attention-a-la-triche-sur-calculatrices" } },
-  marini: { img: "marini", bonne: "Comédienne", faux: ["Maquilleuse", "Costumière"], sujet: "Marilu Marini, groupe TSE", video: null },
   irradie: { img: "irradie", bonne: "Un employé irradié", faux: ["Un employé licencié", "Un employé rescapé"], sujet: "Un employé irradié", video: null },
-  kasparian: { img: "kasparian", bonne: "Coadjuteur du Patriarche arménien d'Istanbul", faux: ["Évêque de l'Église orthodoxe de Jérusalem", "Archimandrite du monastère de Sainte-Catherine"], sujet: "Vartalet Chenork Kasparian", video: null },
   sorcier: { img: "sorcier", bonne: "Sorcier", faux: ["Marabout", "Astrologue"], sujet: "Le sorcier qui part dans l'astral",
     video: { ina: "VDD10011537", debut: 0, page: "https://www.ina.fr/ina-eclaire-actu/video/vdd10011537/le-sorcier-qui-part-dans-l-astral" } }
 };
 /* Questions de ce quiz, dans l'ordre */
-var ORDRE = ["tornade", "masseur", "baton", "pretre"];
+var ORDRE = ["comedienne", "mamie", "kasparian", "guerin", "barnier", "hugo", "calculatrice"];
 var QUESTIONS = ORDRE.map(function (k) { return BANQUE[k]; });
 
 /* Paroles du présentateur : pose = salue / danse */
 var PAGES = [
-  { pose: "salue", txt: ["Saaaluuut, c'est Nikooos !", "Bienvenue pour le quiz final ! Enfin, je veux dire le premier quiz final."], btn: "Suite" },
+  { pose: "salue", txt: ["Saaaluuut, c'est Nikooos !", "Bienvenue pour le quiz final !"], btn: "Suite" },
   { pose: "danse", txt: ["Les règles sont simples et assez éloignées du jeu de la Route du Rhum.", "Vous allez voir des images issues de la télé."], btn: "Suite" },
   { pose: "danse", txt: ["Chaque personne interrogée a un titre qui la qualifie. Par exemple, si Manu passait à la télé, ce serait :"], bandeau: ["Manu", "Bon dernier au jeu Rhumnini"], apres: "À vous de deviner le titre caché.", btn: "Suite" },
   { pose: "danse", txt: ["Une seule réponse possible. Analysez bien les images, la réponse s'y cache parfois.", "À la fin, un beau booster à gagner.", "On respire, on se concentre, et c'est parti !"], btn: "C'est parti !" }
@@ -241,16 +251,26 @@ function etape3(Q) {
   var v = Q.video;
   if (v) {
     pauseMusique(); enVideo = true;
-    var src = v.yt ? "https://www.youtube.com/embed/" + v.yt + "?autoplay=1&rel=0&start=" + v.debut : inaEmbed(v.ina, v.debut);
-    var s = el("div", "screen fade"), f = el("iframe"); f.src = src; f.title = "Vidéo : " + Q.sujet; f.allowFullscreen = true;
-    f.setAttribute("allow", "autoplay; fullscreen; encrypted-media; picture-in-picture"); s.appendChild(f); app.appendChild(s);
-    if (v.debut) app.appendChild(el("p", "depart", "À regarder à partir de " + mmss(v.debut) + " : avance la vidéo jusque-là."));
-    var n = el("p", "note", "La vidéo ne s'affiche pas ? "), a = el("a", "", "L'ouvrir sur son site");
-    a.href = v.page; a.target = "_blank"; a.rel = "noopener"; n.appendChild(a); app.appendChild(n);
+    var s = el("div", "screen fade");
+    if (v.mp4) {
+      var vid = el("video"); vid.src = v.mp4 + (v.debut ? "#t=" + v.debut : ""); vid.controls = true; vid.autoplay = true; vid.playsInline = true; vid.setAttribute("playsinline", "");
+      s.appendChild(vid); app.appendChild(s);
+      try { var pl = vid.play(); if (pl && pl.catch) pl.catch(function () {}); } catch (e) {}
+    } else {
+      var src = v.yt ? "https://www.youtube.com/embed/" + v.yt + "?autoplay=1&rel=0&start=" + v.debut : inaEmbed(v.ina, v.debut);
+      var f = el("iframe"); f.src = src; f.title = "Vidéo : " + Q.sujet; f.allowFullscreen = true;
+      f.setAttribute("allow", "autoplay; fullscreen; encrypted-media; picture-in-picture"); s.appendChild(f); app.appendChild(s);
+      if (v.debut) app.appendChild(el("p", "depart", "À regarder à partir de " + mmss(v.debut) + " : avance la vidéo jusque-là."));
+      var n = el("p", "note", "La vidéo ne s'affiche pas ? "), a = el("a", "", "L'ouvrir sur son site");
+      a.href = v.page; a.target = "_blank"; a.rel = "noopener"; n.appendChild(a); app.appendChild(n);
+    }
+  } else {
+    /* Pas de vidéo : l'image avec le titre bien visible */
+    var im = ecran(Q.img + "-plein.jpg", "Capture de la vidéo, le titre est visible"); im.classList.add("fade"); app.appendChild(im);
   }
   var b = el("button", "btn", ""); b.type = "button"; b.disabled = true;
   var dernier = idx + 1 >= QUESTIONS.length, libelle = dernier ? "Voir mon score" : "Suivant";
-  var reste = v ? ATTENTE_SUIVANT : 0;
+  var reste = v ? ATTENTE_SUIVANT : ATTENTE_IMAGE;
   function maj() { if (reste > 0) b.textContent = libelle + " (" + reste + ")"; else { b.textContent = libelle; b.disabled = false; } }
   maj();
   if (reste > 0) { var t = setInterval(function () { reste--; maj(); if (reste <= 0) clearInterval(t); }, 1000); timers.push(t); }

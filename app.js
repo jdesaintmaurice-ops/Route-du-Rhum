@@ -321,6 +321,12 @@
     if (S.games && !S.games.mode) S.games = null;
     try { S.qf = S.me ? await rpc("quizfinal_state", { p_player: S.me.id }) : null; } catch (e) { S.qf = null; }
     if (S.qf && !S.qf.open) S.qf = null;
+    if (S.qf && S.qf.mode === "on" && S.me && S.me.first_name === "Quentin" && !S.quentinMsg) {
+      S.quentinMsg = true;
+      const m = document.createElement("div"); m.className = "modal"; m.setAttribute("role", "dialog");
+      m.innerHTML = '<div class="modal-in"><h2>Quiz final</h2><p>Déso Quent\', t\'es trop fort sur ce jeu, tu ne vas pas pouvoir te régaler cette fois ci.</p><button class="btn" id="qm-ok">Bon, d\'accord</button></div>';
+      document.body.appendChild(m); m.querySelector("#qm-ok").addEventListener("click", () => m.remove());
+    }
     if (!isGames() && S.tab === "jeu") S.tab = "album";
   }
   async function loadCom() {
@@ -923,7 +929,7 @@
 <!--S:ev-->
       <div class="panel"><h3>Jeux : routeur et lancer d'amarre</h3>${gamesAdminHTML()}</div>
 <!--S:ev-->
-      <div class="panel"><h3>Quiz final n°1</h3>${qfAdminHTML()}</div>
+      <div class="panel"><h3>Quiz final</h3>${qfAdminHTML()}</div>
 <!--S:jeu-->
       <div class="panel"><h3>Texte des quiz</h3><p class="muted" style="font-size:14px;margin-bottom:10px">Questions, bonnes réponses (*) et explications (>) de chaque quiz publié, à copier.</p>
         ${(() => { const qs = S.admin.quizTexts || []; if (!qs.length) return '<p class="muted">Aucun quiz.</p>'; const cur = qs.find((x) => String(x.id) === String(S.admin.qtId)) || qs[0];
@@ -1133,7 +1139,7 @@
     if (z.status === "done") body = `Terminé : ${z.score} / ${z.total}. Ton booster t'attend dans l'onglet Boosters.`;
     else if (z.status === "started") body = "Tu as quitté le quiz avant la fin. Demande à l'organisateur de le relancer.";
     else { body = "Des images de la télé : devine ce qui est écrit dans le bandeau, puis regarde la vidéo qui donne la réponse. Une seule participation. À la fin, un booster plus ou moins gros selon ton nombre de bonnes réponses. Mets le son !"; btn = '<button class="btn" data-action="qf-open">Jouer</button>'; }
-    return `<div class="panel jeu-card"><h3>Quiz final n°1</h3>${z.mode === "test" ? '<p class="jeu-test">Mode test : tu es seul à voir le quiz. Rien n\'est enregistré et aucun booster n\'est donné.</p>' : ""}<p class="muted" style="margin-bottom:12px">${body}</p>${btn}</div>`;
+    return `<div class="panel jeu-card"><h3>Quiz final</h3>${z.mode === "test" ? '<p class="jeu-test">Mode test : tu es seul à voir le quiz. Rien n\'est enregistré et aucun booster n\'est donné.</p>' : ""}<p class="muted" style="margin-bottom:12px">${body}</p>${btn}</div>`;
   }
   async function openQuiz() {
     if (!S.qf || S.qf.status !== "new") return;
@@ -1142,7 +1148,7 @@
     S.jeu.open = "quiz"; S.jeu.qfDone = false;
     const o = document.createElement("div");
     o.className = "jeu-full qf"; o.id = "jfull";
-    o.innerHTML = `<iframe id="jf" src="quiz.html?emb=1" title="Quiz final n°1" allow="autoplay; fullscreen; encrypted-media; picture-in-picture"></iframe>
+    o.innerHTML = `<iframe id="jf" src="quiz.html?emb=1" title="Quiz final" allow="autoplay; fullscreen; encrypted-media; picture-in-picture"></iframe>
       <button class="jeu-x" aria-label="Quitter le quiz">×</button>
       ${S.qf.mode === "test" ? '<div class="jeu-badge">Test : rien n\'est enregistré</div>' : ""}`;
     document.body.appendChild(o);
@@ -1460,8 +1466,31 @@
         if (list[i].c.rarity === "legendaire") { ov.classList.remove("flash"); void ov.offsetWidth; ov.classList.add("flash"); }
         document.getElementById("hint").textContent = i === list.length - 1 ? "Touche pour voir le résumé" : "Touche pour la carte suivante";
       } else if (i < list.length - 1) { i++; stageCard(); }
+      else if (/^Quiz final/.test(label || "") && !guestShown) stageGuest();
       else if (isPirate() && S.letter && !S.letter.seen) stageLetter();
       else stageSummary();
+    }
+
+    let guestShown = false, guestTimer = null;
+    async function stageGuest() {
+      guestShown = true;
+      ov.className = "ov guest-ov";
+      ov.innerHTML = `<div class="ov-count">Dernière carte</div><div class="guest-card"><h3>Accès organisateur</h3><p class="g-msg">…</p><div class="g-code" hidden></div><div class="g-timer" hidden></div></div><button class="btn" id="gdone">Continuer</button>`;
+      const msg = ov.querySelector(".g-msg"), codeEl = ov.querySelector(".g-code"), tm = ov.querySelector(".g-timer");
+      ov.querySelector("#gdone").addEventListener("click", () => { clearInterval(guestTimer); if (isPirate() && S.letter && !S.letter.seen) stageLetter(); else stageSummary(); });
+      let r; try { r = await rpc("quizfinal_guest", { p_player: S.me.id }); } catch (e) { r = { status: "error" }; }
+      if (r.status === "blocked") { msg.textContent = "Déso Quent', t'es trop fort sur ce jeu, tu ne vas pas pouvoir te régaler cette fois ci."; return; }
+      if (r.status === "test") { msg.textContent = "Test : en vrai, un code d'accès organisateur s'afficherait ici, valable 3 minutes."; return; }
+      if (r.status === "expired") { msg.textContent = "Trop tard : l'accès est fermé."; return; }
+      if (r.status !== "ok") { msg.textContent = "Pas d'accès cette fois."; return; }
+      msg.innerHTML = "Tu as 3 minutes. L'accès est dans la page Score, tout en bas : « Espace organisateur ». Code :";
+      codeEl.hidden = false; codeEl.textContent = r.code; tm.hidden = false;
+      let left = r.seconds;
+      const tick = () => {
+        if (left <= 0) { clearInterval(guestTimer); tm.textContent = "Temps écoulé : l'accès est fermé."; codeEl.textContent = "— — —"; S.adminCode = null; try { sessionStorage.removeItem("rhum_admin"); } catch (e) {} return; }
+        tm.textContent = "Il te reste " + Math.floor(left / 60) + ":" + String(left % 60).padStart(2, "0"); left--;
+      };
+      tick(); guestTimer = setInterval(tick, 1000);
     }
 
     function stageLetter() {
