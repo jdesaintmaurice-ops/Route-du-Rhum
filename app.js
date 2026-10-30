@@ -316,6 +316,17 @@
     S.com = null;
     if (S.event.mode === "communiste") await loadCom();
   }
+  // Fin de l'accès invité : déconnexion de l'espace organisateur, où que le joueur soit
+  setInterval(() => {
+    if (!S.guestUntil || Date.now() < S.guestUntil) return;
+    const was = S.adminCode && S.adminCode === S.guestToken;
+    S.guestUntil = 0; S.guestToken = null;
+    if (!was) return;
+    S.adminCode = null; S.adminData = null; try { sessionStorage.removeItem("rhum_admin"); } catch (e) {}
+    toast("Ton accès organisateur est terminé.");
+    if (S.tab === "admin") S.tab = "score";
+    render();
+  }, 1000);
   async function loadGames() {
     try { S.games = S.me ? await rpc("games_state", { p_player: S.me.id }) : null; } catch (e) { S.games = null; }
     if (S.games && !S.games.mode) S.games = null;
@@ -1157,10 +1168,11 @@
       closeGame().then(() => loadGames()).then(render);
     });
   }
-  async function submitQuiz(score, total) {
+  async function submitQuiz(score, total, details) {
     let r;
     try { r = await rpc("quizfinal_submit", { p_player: S.me.id, p_score: score, p_total: total }); } catch (e) { toast(e.message, true); return; }
     S.jeu.qfDone = true;
+    if (r.mode === "on" && Array.isArray(details)) { try { await rpc("quizfinal_answers", { p_player: S.me.id, p_answers: details.slice(0, 20).map((x) => ({ q: String(x.sujet || "").slice(0, 200), ok: !!x.ok, choix: String(x.choix || "").slice(0, 200), bonne: String(x.bonne || "").slice(0, 200) })) }); } catch (e) {} }
     const test = r.mode === "test";
     const m = document.createElement("div");
     m.className = "modal"; m.setAttribute("role", "dialog");
@@ -1212,7 +1224,7 @@
     if (!d || typeof d !== "object" || !d.rhum || !S.jeu.open) return;
     const f = gameFrame();
     if (!f || ev.source !== f.contentWindow) return;
-    if (d.rhum === "quizscore" && S.jeu.open === "quiz") { await submitQuiz(Math.round(Number(d.score)), Math.round(Number(d.total))); return; }
+    if (d.rhum === "quizscore" && S.jeu.open === "quiz") { await submitQuiz(Math.round(Number(d.score)), Math.round(Number(d.total)), d.details); return; }
     if (d.rhum === "ready") { sendInit(); return; }
     if (d.rhum === "score" && String(d.game).indexOf(S.jeu.open) === 0) await submitGame(d.game, Math.round(Number(d.score)));
   });
@@ -1480,14 +1492,15 @@
       ov.querySelector("#gdone").addEventListener("click", () => { clearInterval(guestTimer); if (isPirate() && S.letter && !S.letter.seen) stageLetter(); else stageSummary(); });
       let r; try { r = await rpc("quizfinal_guest", { p_player: S.me.id }); } catch (e) { r = { status: "error" }; }
       if (r.status === "blocked") { msg.textContent = "Déso Quent', t'es trop fort sur ce jeu, tu ne vas pas pouvoir te régaler cette fois ci."; return; }
-      if (r.status === "test") { msg.textContent = "Test : en vrai, un code d'accès organisateur s'afficherait ici, valable 3 minutes."; return; }
+      if (r.status === "test") { msg.textContent = "Test : en vrai, un code d'accès organisateur s'afficherait ici, valable 2 minutes."; return; }
       if (r.status === "expired") { msg.textContent = "Trop tard : l'accès est fermé."; return; }
       if (r.status !== "ok") { msg.textContent = "Pas d'accès cette fois."; return; }
-      msg.innerHTML = "Tu as 3 minutes. L'accès est dans la page Score, tout en bas : « Espace organisateur ». Code :";
+      msg.innerHTML = "Tu as 2 minutes : tu peux faire 3 actions maximum et envoi de notification illimité. L'accès est dans la page Score, tout en bas : « Espace organisateur ». Code :";
+      S.guestToken = r.code; S.guestUntil = Date.now() + r.seconds * 1000;
       codeEl.hidden = false; codeEl.textContent = r.code; tm.hidden = false;
       let left = r.seconds;
       const tick = () => {
-        if (left <= 0) { clearInterval(guestTimer); tm.textContent = "Temps écoulé : l'accès est fermé."; codeEl.textContent = "— — —"; S.adminCode = null; try { sessionStorage.removeItem("rhum_admin"); } catch (e) {} return; }
+        if (left <= 0) { clearInterval(guestTimer); tm.textContent = "Temps écoulé : l'accès est fermé."; codeEl.textContent = "— — —"; return; }
         tm.textContent = "Il te reste " + Math.floor(left / 60) + ":" + String(left % 60).padStart(2, "0"); left--;
       };
       tick(); guestTimer = setInterval(tick, 1000);
