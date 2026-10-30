@@ -253,9 +253,9 @@ function etape3(Q) {
     pauseMusique(); enVideo = true;
     var s = el("div", "screen fade");
     if (v.mp4) {
-      var vid = el("video"); var cand = [v.mp4, v.mp4.replace(/^.*\//, ""), "/" + v.mp4.replace(/^.*\//, ""), "img/quiz/" + v.mp4.replace(/^.*\//, "")], ci = 0, fin = v.debut ? "#t=" + v.debut : "";
-      vid.onerror = function () { ci++; if (ci < cand.length) { vid.src = cand[ci] + fin; vid.load(); try { vid.play(); } catch (e) {} } };
-      vid.src = cand[0] + fin; vid.controls = true; vid.autoplay = true; vid.playsInline = true; vid.setAttribute("playsinline", "");
+      var vid = el("video"); var cand = [v.mp4, v.mp4.replace(/^.*\//, ""), "/" + v.mp4.replace(/^.*\//, ""), "img/quiz/" + v.mp4.replace(/^.*\//, "")], ci = 0, tfin = v.debut ? "#t=" + v.debut : "";
+      vid.onerror = function () { ci++; if (ci < cand.length) { vid.src = cand[ci] + tfin; vid.load(); try { vid.play(); } catch (e) {} } };
+      vid.src = cand[0] + tfin; vid.controls = true; vid.autoplay = true; vid.playsInline = true; vid.setAttribute("playsinline", "");
       s.appendChild(vid); app.appendChild(s);
       try { var pl = vid.play(); if (pl && pl.catch) pl.catch(function () {}); } catch (e) {}
     } else {
