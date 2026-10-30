@@ -77,11 +77,11 @@ VIDEOS.forEach(function (v, n) {
 /* Test du temps de départ : la vidéo des tornades doit commencer à 1 min 10 (70 s). */
 (function () {
   var base = "https://player-hub.ina.fr/embed/8496618_001_020";
-  var essais = [
-    ["?start=70", base + "?start=70"], ["?t=70", base + "?t=70"], ["?tcin=70", base + "?tcin=70"], ["?tc=70", base + "?tc=70"],
-    ["?startAt=70", base + "?startAt=70"], ["?time=70", base + "?time=70"], ["?begin=70", base + "?begin=70"],
-    ["?start=1m10s", base + "?start=1m10s"], ["#t=70", base + "#t=70"], ["?tcin=00:01:10", base + "?tcin=00:01:10"]
-  ];
+  var essais = [["comme le quiz : ?autoplay=1&start=70", base + "?autoplay=1&start=70"]];
+  ["t", "tcin", "tc", "startAt", "time", "begin", "starttime", "from"].forEach(function (k) { essais.push(["?autoplay=1&" + k + "=70", base + "?autoplay=1&" + k + "=70"]); });
+  essais.push(["?autoplay=1&start=1m10s", base + "?autoplay=1&start=1m10s"]);
+  essais.push(["?autoplay=1&tcin=00:01:10", base + "?autoplay=1&tcin=00:01:10"]);
+  essais.push(["?autoplay=1#t=70", base + "?autoplay=1#t=70"]);
   var s = document.createElement("section");
   s.innerHTML = '<h2>Test du départ à 1 min 10 (tornades)</h2><p><small>Clique sur chaque essai : si la vidéo démarre à 1 min 10, note lequel et dis-le-moi.</small></p><div class="box"><iframe allow="fullscreen; autoplay; encrypted-media" allowfullscreen></iframe></div><p class="src"></p><p class="essais"></p>';
   var f = s.querySelector("iframe"), src = s.querySelector(".src");
@@ -91,6 +91,7 @@ VIDEOS.forEach(function (v, n) {
     s.querySelector(".essais").appendChild(b);
   });
   document.getElementById("liste").appendChild(s);
+  f.src = essais[0][1]; src.textContent = "Adresse testée : " + essais[0][1];
 })();
 </script>
 </body>
