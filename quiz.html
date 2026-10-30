@@ -41,6 +41,7 @@ h1 { font: 700 26px/1 var(--display); text-transform: uppercase; letter-spacing:
 .btn:disabled { background: var(--line); border-color: var(--line); color: var(--soft); cursor: not-allowed; }
 .titre { font: 700 24px/1.15 var(--display); text-transform: uppercase; letter-spacing: .08em; margin: 0; color: var(--gold); }
 .note { color: var(--soft); font-size: 15px; margin: 0; }
+.depart { margin: 0; background: rgba(242,193,78,.14); border: 1px solid var(--gold); color: var(--gold); border-radius: 10px; padding: 10px 14px; font-weight: 700; text-align: center; }
 .note a { color: #7cc4ff; }
 .score { font: 700 72px/1 var(--display); margin: 0; text-align: center; }
 .recap { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
@@ -243,7 +244,8 @@ function etape3(Q) {
     var src = v.yt ? "https://www.youtube.com/embed/" + v.yt + "?autoplay=1&rel=0&start=" + v.debut : inaEmbed(v.ina, v.debut);
     var s = el("div", "screen fade"), f = el("iframe"); f.src = src; f.title = "Vidéo : " + Q.sujet; f.allowFullscreen = true;
     f.setAttribute("allow", "autoplay; fullscreen; encrypted-media; picture-in-picture"); s.appendChild(f); app.appendChild(s);
-    var n = el("p", "note", (v.debut ? "Extrait à partir de " + mmss(v.debut) + ". " : "") + "La vidéo ne s'affiche pas ? "), a = el("a", "", "L'ouvrir sur son site");
+    if (v.debut) app.appendChild(el("p", "depart", "À regarder à partir de " + mmss(v.debut) + " : avance la vidéo jusque-là."));
+    var n = el("p", "note", "La vidéo ne s'affiche pas ? "), a = el("a", "", "L'ouvrir sur son site");
     a.href = v.page; a.target = "_blank"; a.rel = "noopener"; n.appendChild(a); app.appendChild(n);
   }
   var b = el("button", "btn", ""); b.type = "button"; b.disabled = true;
