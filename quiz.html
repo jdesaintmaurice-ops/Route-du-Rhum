@@ -153,7 +153,7 @@ function head() { tc.textContent = "Question " + (idx + 1) + " / " + QUESTIONS.l
 function mmss(s) { return Math.floor(s / 60) + " min " + String(s % 60).padStart(2, "0") + " s"; }
 
 /* Cherche l'image dans plusieurs dossiers au cas où le dossier n'est pas exactement au bon endroit. */
-var DOSSIERS = ["img/quiz/", "quiz/", "img/", "", "/img/quiz/"];
+var DOSSIERS = ["img/quiz/", "quiz/", "img/", "", "/img/quiz/", "2-images-quiz/", "/2-images-quiz/"];
 function ecran(nom, alt) {
   var s = el("div", "screen"), i = el("img"), k = 0;
   i.alt = alt;
@@ -253,7 +253,9 @@ function etape3(Q) {
     pauseMusique(); enVideo = true;
     var s = el("div", "screen fade");
     if (v.mp4) {
-      var vid = el("video"); vid.src = v.mp4 + (v.debut ? "#t=" + v.debut : ""); vid.controls = true; vid.autoplay = true; vid.playsInline = true; vid.setAttribute("playsinline", "");
+      var vid = el("video"); var cand = [v.mp4, v.mp4.replace(/^.*\//, ""), "/" + v.mp4.replace(/^.*\//, ""), "img/quiz/" + v.mp4.replace(/^.*\//, "")], ci = 0, fin = v.debut ? "#t=" + v.debut : "";
+      vid.onerror = function () { ci++; if (ci < cand.length) { vid.src = cand[ci] + fin; vid.load(); try { vid.play(); } catch (e) {} } };
+      vid.src = cand[0] + fin; vid.controls = true; vid.autoplay = true; vid.playsInline = true; vid.setAttribute("playsinline", "");
       s.appendChild(vid); app.appendChild(s);
       try { var pl = vid.play(); if (pl && pl.catch) pl.catch(function () {}); } catch (e) {}
     } else {
